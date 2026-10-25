@@ -7,7 +7,10 @@ import {
   printReceipt,
   openReceiptInNewTab,
   downloadReceiptFile,
+  downloadReceiptAsPhoto,
   copyReceiptToClipboard,
+  getWhatsAppReceiptUrl,
+  shareReceiptImageOnWhatsApp,
 } from '../../lib/receiptPrinter';
 import confetti from 'canvas-confetti';
 import {
@@ -41,7 +44,16 @@ import {
   Zap,
   Sliders,
   Gift,
-  UserPlus
+  UserPlus,
+  PauseCircle,
+  PlayCircle,
+  PlusCircle,
+  History,
+  Keyboard,
+  MessageCircle,
+  StickyNote,
+  HelpCircle,
+  Camera,
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -124,6 +136,47 @@ export const PosScreen: React.FC = () => {
     }
   };
 
+  const [downloadingPhoto, setDownloadingPhoto] = useState<'jpeg' | 'png' | null>(null);
+  const [sharingWhatsAppImage, setSharingWhatsAppImage] = useState<boolean>(false);
+
+  const handleDownloadPhoto = async (imageType: 'jpeg' | 'png' = 'jpeg') => {
+    if (!completedSale) return;
+    setDownloadingPhoto(imageType);
+    try {
+      const ok = await downloadReceiptAsPhoto(completedSale, settings, receiptFormat, imageType);
+      if (ok) {
+        setStockToast({
+          type: 'success',
+          title: 'Receipt Image Saved',
+          message: `Saved Receipt-${completedSale.receipt_number}.${imageType} successfully.`,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to download photo:', err);
+    } finally {
+      setDownloadingPhoto(null);
+    }
+  };
+
+  const handleShareWhatsAppImage = async () => {
+    if (!completedSale) return;
+    setSharingWhatsAppImage(true);
+    try {
+      const res = await shareReceiptImageOnWhatsApp(completedSale, settings, waPhoneInput, receiptFormat);
+      if (res.success) {
+        setStockToast({
+          type: 'success',
+          title: res.method === 'native-share' ? 'WhatsApp Shared' : 'Receipt Image Ready',
+          message: res.message || 'Opened WhatsApp with receipt image.',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to share on WhatsApp:', err);
+    } finally {
+      setSharingWhatsAppImage(false);
+    }
+  };
+
   // Responsive Mobile/Tablet View Tab
   const [mobileTab, setMobileTab] = useState<'catalogue' | 'cart'>('catalogue');
   const [stockToast, setStockToast] = useState<{
@@ -150,10 +203,107 @@ export const PosScreen: React.FC = () => {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // --- POS UPDATES: Park & Hold Orders State ---
+  const HELD_ORDERS_KEY = 'brightcyber_pos_held_orders';
+  const [heldOrdersModalOpen, setHeldOrdersModalOpen] = useState<boolean>(false);
+  const [heldOrders, setHeldOrders] = useState<Array<{
+    id: string;
+    createdAt: string;
+    customerId: number | null;
+    customerName: string;
+    customerPhone?: string;
+    items: CartItem[];
+    subtotal: number;
+    globalDiscount: number;
+    directDiscountInput: string;
+    directDiscountType: 'fixed' | 'percentage';
+    appliedDiscountRule: Discount | null;
+    cartNotes: string;
+    grandTotal: number;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem('brightcyber_pos_held_orders');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveHeldOrders = (orders: typeof heldOrders) => {
+    setHeldOrders(orders);
+    try {
+      localStorage.setItem('brightcyber_pos_held_orders', JSON.stringify(orders));
+    } catch (e) {
+      console.warn('Failed to persist held orders:', e);
+    }
+  };
+
+  // --- POS UPDATES: Quick Ad-Hoc / Custom Item Modal State ---
+  const [customItemModalOpen, setCustomItemModalOpen] = useState<boolean>(false);
+  const [customItemName, setCustomItemName] = useState<string>('');
+  const [customItemPrice, setCustomItemPrice] = useState<string>('');
+  const [customItemQty, setCustomItemQty] = useState<string>('1');
+  const [customItemUnit, setCustomItemUnit] = useState<string>('job');
+  const [customItemIsProduct, setCustomItemIsProduct] = useState<boolean>(false);
+
+  // --- POS UPDATES: Order Notes UI State ---
+  const [showOrderNotes, setShowOrderNotes] = useState<boolean>(false);
+
+  // --- POS UPDATES: Recent Sales / Quick Reprint State ---
+  const [recentSalesModalOpen, setRecentSalesModalOpen] = useState<boolean>(false);
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [loadingRecentSales, setLoadingRecentSales] = useState<boolean>(false);
+
+  // --- POS UPDATES: Keyboard Shortcuts Help State ---
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState<boolean>(false);
+
+  // --- POS UPDATES: WhatsApp Direct Send Phone Input ---
+  const [waPhoneInput, setWaPhoneInput] = useState<string>('');
+
+  // Web Audio Instant Feedback Chimes
+  const playAudioFeedback = (type: 'beep' | 'success' | 'alert' = 'beep') => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'alert') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(280, ctx.currentTime);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+      } else if (type === 'success') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+      } else {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(750, ctx.currentTime);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.1);
+      }
+    } catch {
+      // Audio playback permitted after user gesture
+    }
+  };
+
   // Load Catalogue
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
+
     try {
       setLoading(true);
       setLoadError(null);
@@ -183,17 +333,6 @@ export const PosScreen: React.FC = () => {
     loadData();
   }, []);
 
-  // Keyboard shortcut listener for F2
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'F2') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // Dynamic available categories list
   const availableCategories = useMemo(() => {
@@ -289,6 +428,7 @@ export const PosScreen: React.FC = () => {
   }) => {
     // 1. If it's a physical product and stock is 0 or less
     if (item.isProduct && (item.stockQuantity === undefined || item.stockQuantity <= 0)) {
+      playAudioFeedback('alert');
       setStockToast({
         type: 'out_of_stock',
         title: 'Out of Stock',
@@ -300,7 +440,11 @@ export const PosScreen: React.FC = () => {
 
     const unitPrice = Number(item.price) || 0;
     const costPrice = Number(item.costPrice) || 0;
-    const cartKey = item.productId ? `p-${item.productId}` : `s-${item.serviceId}`;
+    const cartKey = item.productId
+      ? `p-${item.productId}`
+      : item.serviceId
+      ? `s-${item.serviceId}`
+      : `adhoc-${item.name}-${unitPrice}`;
 
     // 2. Check if product already exists in cart and exceeds available stock
     const existing = cart.find((c) => c.cartId === cartKey);
@@ -311,6 +455,7 @@ export const PosScreen: React.FC = () => {
       item.stockQuantity !== undefined &&
       existing.quantity + 1 > item.stockQuantity
     ) {
+      playAudioFeedback('alert');
       setStockToast({
         type: 'limit',
         title: 'Stock Limit Reached',
@@ -351,6 +496,7 @@ export const PosScreen: React.FC = () => {
       }
     });
 
+    playAudioFeedback('beep');
     // Show instant visual confirmation banner
     setStockToast({
       type: 'success',
@@ -358,6 +504,7 @@ export const PosScreen: React.FC = () => {
       message: `${item.name} (${formatKsh(unitPrice)}/${item.unit})`,
     });
   };
+
 
   // Update Cart Quantity
   const updateQuantity = (cartId: string, delta: number) => {
@@ -882,6 +1029,9 @@ export const PosScreen: React.FC = () => {
     });
   };
 
+  // Selected Customer reference
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+
   // Calculations
   const subtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
@@ -903,8 +1053,153 @@ export const PosScreen: React.FC = () => {
 
   const grandTotal = Math.max(0, subtotal - totalDiscount + taxAmount);
 
+  // --- POS HANDLER: Park Current Order / Hold Ticket ---
+  const handleParkCurrentOrder = () => {
+    if (cart.length === 0) {
+      playAudioFeedback('alert');
+      setStockToast({
+        type: 'limit',
+        title: 'Empty Cart',
+        message: 'There are no items in the current order to park / hold.',
+      });
+      return;
+    }
+
+    const newHeld = {
+      id: `hold-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      customerId: selectedCustomerId,
+      customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Client',
+      customerPhone: selectedCustomer?.phone || undefined,
+      items: [...cart],
+      subtotal,
+      globalDiscount,
+      directDiscountInput,
+      directDiscountType,
+      appliedDiscountRule,
+      cartNotes,
+      grandTotal,
+    };
+
+    const updated = [newHeld, ...heldOrders];
+    saveHeldOrders(updated);
+
+    // Reset current active cart
+    setCart([]);
+    setSelectedCustomerId(null);
+    setGlobalDiscount(0);
+    setDirectDiscountInput('');
+    setAppliedDiscountRule(null);
+    setCartNotes('');
+
+    playAudioFeedback('beep');
+    setStockToast({
+      type: 'success',
+      title: 'Order Parked / Held',
+      message: `Ticket for ${newHeld.customerName} (${newHeld.items.length} items, ${formatKsh(grandTotal)}) held. Ready for next client.`,
+    });
+  };
+
+  const handleResumeHeldOrder = (order: typeof heldOrders[0]) => {
+    if (cart.length > 0) {
+      const confirmSwap = confirm('Current cart has items. Replace cart with this held order?');
+      if (!confirmSwap) return;
+    }
+
+    setCart(order.items);
+    setSelectedCustomerId(order.customerId);
+    setGlobalDiscount(order.globalDiscount || 0);
+    setDirectDiscountInput(order.directDiscountInput || '');
+    setDirectDiscountType(order.directDiscountType || 'fixed');
+    setAppliedDiscountRule(order.appliedDiscountRule || null);
+    setCartNotes(order.cartNotes || '');
+
+    const filtered = heldOrders.filter((h) => h.id !== order.id);
+    saveHeldOrders(filtered);
+    setHeldOrdersModalOpen(false);
+
+    playAudioFeedback('success');
+    setStockToast({
+      type: 'success',
+      title: 'Held Order Restored',
+      message: `Restored order for ${order.customerName} (${order.items.length} items).`,
+    });
+  };
+
+  const handleDeleteHeldOrder = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const filtered = heldOrders.filter((h) => h.id !== id);
+    saveHeldOrders(filtered);
+    setStockToast({
+      type: 'success',
+      title: 'Held Order Removed',
+      message: 'Suspended order removed.',
+    });
+  };
+
+  // --- POS HANDLER: Custom / Ad-Hoc Item Quick Add ---
+  const handleAddCustomItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = customItemName.trim();
+    const price = parseFloat(customItemPrice);
+    const qty = parseFloat(customItemQty) || 1;
+
+    if (!name) {
+      alert('Please enter an item or service name.');
+      return;
+    }
+    if (isNaN(price) || price < 0) {
+      alert('Please enter a valid price amount.');
+      return;
+    }
+
+    const customKey = `adhoc-${Date.now()}`;
+    const newItem: CartItem = {
+      cartId: customKey,
+      productId: null,
+      serviceId: null,
+      name: name,
+      unitPrice: price,
+      costPrice: 0,
+      quantity: qty,
+      unit: customItemUnit.trim() || (customItemIsProduct ? 'pc' : 'job'),
+      discount: 0,
+      total: price * qty,
+      isProduct: customItemIsProduct,
+      stockQuantity: 99999,
+    };
+
+    setCart((prev) => [...prev, newItem]);
+    setCustomItemModalOpen(false);
+    setCustomItemName('');
+    setCustomItemPrice('');
+    setCustomItemQty('1');
+
+    playAudioFeedback('beep');
+    setStockToast({
+      type: 'success',
+      title: 'Custom Charge Added',
+      message: `"${name}" (${formatKsh(price)}/${newItem.unit} x ${qty}) added to order.`,
+    });
+  };
+
+  // --- POS HANDLER: Recent Sales Quick Modal ---
+  const handleOpenRecentSales = async () => {
+    setRecentSalesModalOpen(true);
+    setLoadingRecentSales(true);
+    try {
+      const res = await api.get<{ sales: Sale[] }>('/sales?limit=15');
+      setRecentSales(res.sales || []);
+    } catch (err) {
+      console.warn('Failed to load recent sales:', err);
+    } finally {
+      setLoadingRecentSales(false);
+    }
+  };
+
   // Handle Quick Payment Open
   const handleOpenCheckout = () => {
+
     if (cart.length === 0) return;
     setSaleError(null);
     setCashTendered(String(grandTotal));
@@ -1062,9 +1357,78 @@ export const PosScreen: React.FC = () => {
     }
   };
 
-  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+  // Master POS Keyboard Shortcuts Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+      // Always allow Escape to close active modals
+      if (e.key === 'Escape') {
+        if (paymentModalOpen) setPaymentModalOpen(false);
+        else if (receiptModalOpen) setReceiptModalOpen(false);
+        else if (newCustomerModalOpen) setNewCustomerModalOpen(false);
+        else if (heldOrdersModalOpen) setHeldOrdersModalOpen(false);
+        else if (customItemModalOpen) setCustomItemModalOpen(false);
+        else if (recentSalesModalOpen) setRecentSalesModalOpen(false);
+        else if (shortcutsModalOpen) setShortcutsModalOpen(false);
+        else if (itemDiscountModalItem) setItemDiscountModalItem(null);
+        else if (posRestockModalOpen) setPosRestockModalOpen(false);
+        return;
+      }
+
+      // F-Keys work globally even if an input has focus
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      } else if (e.key === 'F4') {
+        e.preventDefault();
+        handleParkCurrentOrder();
+      } else if (e.key === 'F8') {
+        e.preventDefault();
+        setCustomItemModalOpen(true);
+      } else if (e.key === 'F9') {
+        e.preventDefault();
+        setCartTab((prev) => (prev === 'items' ? 'discounts' : 'items'));
+      } else if (e.key === 'F12') {
+        e.preventDefault();
+        if (cart.length > 0 && !paymentModalOpen && !receiptModalOpen) {
+          handleOpenCheckout();
+        }
+      } else if (e.key === '?' && !isInput) {
+        e.preventDefault();
+        setShortcutsModalOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    cart,
+    subtotal,
+    grandTotal,
+    globalDiscount,
+    directDiscountInput,
+    directDiscountType,
+    appliedDiscountRule,
+    cartNotes,
+    selectedCustomerId,
+    selectedCustomer,
+    heldOrders,
+    paymentModalOpen,
+    receiptModalOpen,
+    newCustomerModalOpen,
+    heldOrdersModalOpen,
+    customItemModalOpen,
+    recentSalesModalOpen,
+    shortcutsModalOpen,
+    itemDiscountModalItem,
+    posRestockModalOpen,
+  ]);
 
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row h-[calc(100vh-57px)] overflow-hidden bg-[#F8FAFC] dark:bg-[#0B0F19] text-[#0F172A] dark:text-[#F8FAFC] relative transition-colors">
@@ -1142,8 +1506,8 @@ export const PosScreen: React.FC = () => {
       >
         {/* Top Search & Filter Bar */}
         <div className="p-3.5 border-b border-[#E2E8F0] dark:border-[#1E293B] bg-white dark:bg-[#0F172A] space-y-2.5">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 ref={searchInputRef}
@@ -1154,8 +1518,18 @@ export const PosScreen: React.FC = () => {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    if (filteredItems.length === 1) {
+                    const trimmed = searchQuery.trim().toLowerCase();
+                    const exactMatch = filteredItems.find(
+                      (i) =>
+                        (i.barcode && i.barcode.toLowerCase() === trimmed) ||
+                        (i.sku && i.sku.toLowerCase() === trimmed)
+                    );
+                    if (exactMatch) {
+                      addToCart(exactMatch);
+                      setSearchQuery('');
+                    } else if (filteredItems.length === 1) {
                       addToCart(filteredItems[0]);
+                      setSearchQuery('');
                     }
                   }
                 }}
@@ -1172,13 +1546,48 @@ export const PosScreen: React.FC = () => {
               )}
             </div>
 
-            <button
-              onClick={loadData}
-              title="Refresh catalogue"
-              className="p-2 bg-[#F8FAFC] dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#2563EB] dark:hover:text-[#3B82F6] rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition cursor-pointer"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+            {/* Quick Actions Buttons */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                id="btn-pos-custom-item"
+                onClick={() => setCustomItemModalOpen(true)}
+                title="Add custom charge or ad-hoc cyber service (F8)"
+                className="px-2.5 py-2 bg-[#EFF6FF] dark:bg-[#1E293B] hover:bg-[#DBEAFE] dark:hover:bg-[#2563EB]/30 text-[#2563EB] dark:text-[#3B82F6] font-semibold text-xs rounded-lg border border-[#BFDBFE] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Custom Charge</span>
+                <span className="text-[10px] opacity-75 font-mono">(F8)</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-pos-recent-sales"
+                onClick={handleOpenRecentSales}
+                title="Recent Sales & Quick Reprint"
+                className="p-2 bg-[#F8FAFC] dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#2563EB] dark:hover:text-[#3B82F6] rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition cursor-pointer"
+              >
+                <History className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                id="btn-pos-shortcuts-help"
+                onClick={() => setShortcutsModalOpen(true)}
+                title="POS Keyboard Shortcuts (?)"
+                className="p-2 bg-[#F8FAFC] dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#2563EB] dark:hover:text-[#3B82F6] rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition cursor-pointer"
+              >
+                <Keyboard className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={loadData}
+                title="Refresh catalogue"
+                className="p-2 bg-[#F8FAFC] dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#2563EB] dark:hover:text-[#3B82F6] rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Primary Business Categories */}
@@ -1371,25 +1780,53 @@ export const PosScreen: React.FC = () => {
         {/* Cart Header & Customer Selector */}
         <div className="p-3.5 border-b border-[#E2E8F0] dark:border-[#1E293B] bg-white dark:bg-[#0F172A] space-y-2.5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShoppingCart className="w-4 h-4 text-[#2563EB]" />
-              <h2 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.18em]">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <ShoppingCart className="w-4 h-4 text-[#2563EB] shrink-0" />
+              <h2 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.16em] truncate">
                 Current Order
               </h2>
-              <span className="bg-[#EFF6FF] dark:bg-[#1E293B] text-[#2563EB] dark:text-[#3B82F6] border border-[#BFDBFE] dark:border-[#334155] text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold">
-                {cart.reduce((sum, item) => sum + item.quantity, 0)} items
+              <span className="bg-[#EFF6FF] dark:bg-[#1E293B] text-[#2563EB] dark:text-[#3B82F6] border border-[#BFDBFE] dark:border-[#334155] text-[10px] px-1.5 py-0.2 rounded-full font-mono font-semibold shrink-0">
+                {totalCartCount}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Held Orders Queue button */}
+              {heldOrders.length > 0 && (
+                <button
+                  type="button"
+                  id="btn-pos-held-orders"
+                  onClick={() => setHeldOrdersModalOpen(true)}
+                  title="View parked/held orders queue"
+                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                >
+                  <PauseCircle className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span>Held ({heldOrders.length})</span>
+                </button>
+              )}
+
+              {/* Park Order button */}
+              {cart.length > 0 && (
+                <button
+                  type="button"
+                  id="btn-pos-park-order"
+                  onClick={handleParkCurrentOrder}
+                  title="Park / Hold current order ticket (F4)"
+                  className="px-2 py-1 bg-[#F1F5F9] hover:bg-[#E2E8F0] dark:bg-[#1E293B] dark:hover:bg-[#334155] text-[#475569] dark:text-[#CBD5E1] rounded-md text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1 border border-[#CBD5E1] dark:border-[#334155] cursor-pointer transition shadow-2xs"
+                >
+                  <PauseCircle className="w-3 h-3 text-[#2563EB]" />
+                  <span>Hold</span>
+                </button>
+              )}
+
               {(cart.length > 0 || totalDiscount > 0 || selectedCustomerId) && (
                 <button
                   id="btn-next-customer"
                   onClick={handleResetForNextCustomer}
                   title="Reset order, customer, and all discounts for next customer"
-                  className="text-[10px] text-[#2563EB] hover:text-[#1D4ED8] dark:text-[#3B82F6] font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition"
+                  className="text-[10px] text-[#2563EB] hover:text-[#1D4ED8] dark:text-[#3B82F6] font-semibold uppercase tracking-wider flex items-center gap-0.5 cursor-pointer transition"
                 >
-                  <UserPlus className="w-3 h-3" /> Next Client
+                  <UserPlus className="w-3 h-3" /> Next
                 </button>
               )}
 
@@ -1397,9 +1834,10 @@ export const PosScreen: React.FC = () => {
                 <button
                   id="btn-clear-cart"
                   onClick={clearCart}
-                  className="text-[10px] text-[#64748B] hover:text-rose-600 dark:hover:text-rose-400 uppercase tracking-widest flex items-center gap-1 cursor-pointer transition"
+                  title="Clear all cart items"
+                  className="text-[10px] text-[#64748B] hover:text-rose-600 dark:hover:text-rose-400 uppercase tracking-widest flex items-center gap-0.5 cursor-pointer transition"
                 >
-                  <Trash2 className="w-3 h-3" /> Clear
+                  <Trash2 className="w-3 h-3" />
                 </button>
               )}
             </div>
@@ -1433,6 +1871,40 @@ export const PosScreen: React.FC = () => {
               <Plus className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Order Notes / Remarks field */}
+          <div className="pt-0.5">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setShowOrderNotes(!showOrderNotes)}
+                className="text-[10px] text-[#64748B] dark:text-[#94A3B8] hover:text-[#2563EB] dark:hover:text-[#3B82F6] flex items-center gap-1 cursor-pointer font-medium"
+              >
+                <StickyNote className="w-3 h-3 text-[#2563EB]" />
+                <span>{cartNotes ? `Order Note: "${cartNotes.slice(0, 20)}..."` : '+ Add Order Note / Instructions'}</span>
+                {cartNotes && <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span>}
+              </button>
+              {cartNotes && (
+                <button
+                  type="button"
+                  onClick={() => setCartNotes('')}
+                  className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {showOrderNotes && (
+              <textarea
+                rows={2}
+                value={cartNotes}
+                onChange={(e) => setCartNotes(e.target.value)}
+                placeholder="e.g. Client to pick at 3:00 PM, glossy A4 photo print, bind with blue cover..."
+                className="w-full mt-1.5 px-2.5 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#CBD5E1] dark:border-[#334155] rounded-lg text-xs text-[#0F172A] dark:text-white placeholder-[#94A3B8] focus:outline-none focus:border-[#2563EB]"
+              />
+            )}
+          </div>
+
 
           {/* Active Order Discount Pill (With 1-Click Delete) */}
           {totalDiscount > 0 && (
@@ -2448,6 +2920,14 @@ export const PosScreen: React.FC = () => {
                   ))}
                 </div>
 
+                {/* Notes / Special Instructions if any */}
+                {completedSale.notes && (
+                  <div className="py-1.5 border-b border-dashed border-gray-400 text-[9.5px]">
+                    <span className="font-bold">Instructions / Note: </span>
+                    <span>{completedSale.notes}</span>
+                  </div>
+                )}
+
                 {/* Footer */}
                 <div className="text-center pt-2 space-y-1 text-[9px] text-gray-700">
                   <p>{settings?.receipt_footer || 'Thank you for choosing Bright Cyber & ICT Centre!'}</p>
@@ -2460,56 +2940,128 @@ export const PosScreen: React.FC = () => {
             </div>
 
             {/* Modal Actions */}
-            <div className="p-3.5 border-t border-[#E2E8F0] dark:border-[#1E293B] bg-[#F8FAFC] dark:bg-[#0B0F19] flex flex-wrap items-center justify-between gap-2">
-              <button
-                onClick={() => setReceiptModalOpen(false)}
-                className="px-4 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] uppercase tracking-wider rounded-lg transition cursor-pointer border border-[#E2E8F0] dark:border-[#334155]"
-              >
-                Next Sale
-              </button>
+            <div className="p-3.5 border-t border-[#E2E8F0] dark:border-[#1E293B] bg-[#F8FAFC] dark:bg-[#0B0F19] flex flex-col gap-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  onClick={() => setReceiptModalOpen(false)}
+                  className="px-4 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] uppercase tracking-wider rounded-lg transition cursor-pointer border border-[#E2E8F0] dark:border-[#334155]"
+                >
+                  Next Sale
+                </button>
 
-              <div className="flex items-center flex-wrap gap-2">
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyReceiptText}
+                    className={`px-3 py-2 text-[11px] font-semibold uppercase tracking-wider rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
+                      receiptCopied
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-500/80 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] border-[#E2E8F0] dark:border-[#334155]'
+                    }`}
+                    title="Copy formatted receipt text for WhatsApp/SMS"
+                  >
+                    {receiptCopied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#2563EB]" />}
+                    {receiptCopied ? 'Copied!' : 'Copy Text'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => downloadReceiptFile(completedSale, settings, receiptFormat)}
+                    className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer"
+                    title="Download receipt HTML file to device"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#2563EB]" /> Download
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={downloadingPhoto !== null}
+                    onClick={() => handleDownloadPhoto('jpeg')}
+                    className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Download full unclipped receipt as JPEG photo"
+                  >
+                    {downloadingPhoto === 'jpeg' ? (
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin text-[#2563EB]" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5 text-[#2563EB]" />
+                    )}
+                    <span>{downloadingPhoto === 'jpeg' ? 'Saving...' : 'Photo (JPEG)'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={downloadingPhoto !== null}
+                    onClick={() => handleDownloadPhoto('png')}
+                    className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Download receipt as PNG photo"
+                  >
+                    {downloadingPhoto === 'png' ? (
+                      <RotateCcw className="w-3.5 h-3.5 animate-spin text-[#2563EB]" />
+                    ) : (
+                      <Camera className="w-3.5 h-3.5 text-[#64748B] dark:text-[#94A3B8]" />
+                    )}
+                    <span>{downloadingPhoto === 'png' ? 'Saving...' : 'PNG'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openReceiptInNewTab(completedSale, settings, receiptFormat)}
+                    className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer"
+                    title="Open full printable receipt in a new tab"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-[#2563EB]" /> Open Tab
+                  </button>
+
+                  <button
+                    id="btn-print-receipt-action"
+                    onClick={() => printReceipt(completedSale, settings, receiptFormat)}
+                    className="px-4 py-2 border border-[#2563EB] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <Printer className="w-4 h-4" /> Print Receipt
+                  </button>
+                </div>
+              </div>
+
+              {/* Direct WhatsApp Receipt Share */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B]">
+                <div className="relative flex-1 min-w-[200px]">
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Customer WhatsApp phone (e.g. 0712345678)"
+                    value={waPhoneInput}
+                    onChange={(e) => setWaPhoneInput(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1.5 bg-white dark:bg-[#1E293B] border border-emerald-300 dark:border-emerald-700/60 rounded-lg text-xs font-mono text-[#0F172A] dark:text-white placeholder-[#94A3B8] focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
                 <button
                   type="button"
-                  onClick={handleCopyReceiptText}
-                  className={`px-3 py-2 text-[11px] font-semibold uppercase tracking-wider rounded-lg border transition flex items-center gap-1.5 cursor-pointer ${
-                    receiptCopied
-                      ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-500/80 text-emerald-700 dark:text-emerald-300'
-                      : 'bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] border-[#E2E8F0] dark:border-[#334155]'
-                  }`}
-                  title="Copy formatted receipt text for WhatsApp/SMS"
+                  disabled={sharingWhatsAppImage}
+                  onClick={handleShareWhatsAppImage}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold text-xs rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                  title="Share or send full unclipped receipt photo directly on WhatsApp"
                 >
-                  {receiptCopied ? <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-[#2563EB]" />}
-                  {receiptCopied ? 'Copied!' : 'Copy Text'}
+                  {sharingWhatsAppImage ? (
+                    <RotateCcw className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : (
+                    <Camera className="w-3.5 h-3.5 text-white" />
+                  )}
+                  <span>{sharingWhatsAppImage ? 'Preparing...' : 'WhatsApp (Image)'}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => downloadReceiptFile(completedSale, settings, receiptFormat)}
-                  className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer"
-                  title="Download receipt HTML file to device"
+                <a
+                  href={getWhatsAppReceiptUrl(completedSale, settings, waPhoneInput)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs font-semibold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0"
+                  title="Send formatted text receipt via WhatsApp link"
                 >
-                  <Download className="w-3.5 h-3.5 text-[#2563EB]" /> Download
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openReceiptInNewTab(completedSale, settings, receiptFormat)}
-                  className="px-3 py-2 bg-white dark:bg-[#1E293B] hover:bg-[#F1F5F9] dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-semibold uppercase tracking-wider rounded-lg border border-[#E2E8F0] dark:border-[#334155] transition flex items-center gap-1.5 cursor-pointer"
-                  title="Open full printable receipt in a new tab"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-[#2563EB]" /> Open in Tab
-                </button>
-
-                <button
-                  id="btn-print-receipt-action"
-                  onClick={() => printReceipt(completedSale, settings, receiptFormat)}
-                  className="px-4 py-2 border border-[#2563EB] bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold uppercase tracking-wider rounded-lg transition flex items-center gap-2 cursor-pointer shadow-sm"
-                >
-                  <Printer className="w-4 h-4" /> Print Receipt
-                </button>
+                  <MessageCircle className="w-3.5 h-3.5" /> Text
+                </a>
               </div>
             </div>
+
           </div>
         </div>
       )}
@@ -2887,6 +3439,418 @@ export const PosScreen: React.FC = () => {
           </div>
         </div>
       )}
+      {/* MODAL 5: Parked / Held Orders Queue */}
+      {heldOrdersModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1E293B] rounded-2xl max-w-lg w-full shadow-2xl p-5 text-[#0F172A] dark:text-[#F8FAFC] flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B] mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center border border-amber-200 dark:border-amber-800">
+                  <PauseCircle className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.18em]">
+                    Parked / Suspended Orders Queue
+                  </h3>
+                  <p className="text-[10px] text-[#64748B] dark:text-[#94A3B8]">
+                    {heldOrders.length} ticket(s) waiting on hold
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setHeldOrdersModalOpen(false)}
+                className="text-[#64748B] hover:text-[#0F172A] dark:hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 custom-scrollbar pr-1">
+              {heldOrders.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center space-y-2 text-[#64748B] dark:text-[#94A3B8]">
+                  <PauseCircle className="w-10 h-10 text-[#CBD5E1] dark:text-[#334155] stroke-1" />
+                  <p className="text-xs font-semibold">No tickets currently parked</p>
+                  <p className="text-[10px] max-w-xs">
+                    When a customer needs time to retrieve money or print files, click "Hold" on the active cart to park it here.
+                  </p>
+                </div>
+              ) : (
+                heldOrders.map((h) => (
+                  <div
+                    key={h.id}
+                    className="p-3.5 rounded-xl border border-[#E2E8F0] dark:border-[#1E293B] bg-[#F8FAFC] dark:bg-[#1E293B]/50 hover:border-[#2563EB] dark:hover:border-[#3B82F6] transition shadow-2xs space-y-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-[#0F172A] dark:text-white">
+                            {h.customerName}
+                          </span>
+                          {h.customerPhone && (
+                            <span className="text-[10px] font-mono text-[#64748B] dark:text-[#94A3B8]">
+                              ({h.customerPhone})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] flex items-center gap-2 mt-0.5">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            {new Date(h.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span>•</span>
+                          <span>{h.items.length} item(s)</span>
+                          {h.cartNotes && (
+                            <>
+                              <span>•</span>
+                              <span className="italic text-[#2563EB] dark:text-[#3B82F6] line-clamp-1">
+                                "{h.cartNotes}"
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-xs font-serif-luxury font-bold text-[#2563EB] dark:text-[#3B82F6]">
+                          {formatKsh(h.grandTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Preview of items */}
+                    <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] bg-white dark:bg-[#0F172A] p-2 rounded-lg border border-[#E2E8F0] dark:border-[#334155] line-clamp-2">
+                      {h.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-[#E2E8F0] dark:border-[#334155]">
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteHeldOrder(h.id, e)}
+                        className="px-2.5 py-1 text-rose-600 hover:text-rose-700 dark:text-rose-400 text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" /> Discard
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleResumeHeldOrder(h)}
+                        className="px-3.5 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <PlayCircle className="w-3.5 h-3.5" /> Resume Ticket
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between mt-2">
+              {heldOrders.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Discard all held orders in the queue?')) {
+                      saveHeldOrders([]);
+                    }
+                  }}
+                  className="text-[10px] text-rose-500 hover:text-rose-700 uppercase tracking-wider font-semibold cursor-pointer"
+                >
+                  Clear All ({heldOrders.length})
+                </button>
+              ) : <div />}
+
+              <button
+                type="button"
+                onClick={() => setHeldOrdersModalOpen(false)}
+                className="px-4 py-1.5 bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: Quick Custom Item / Ad-Hoc Cyber Charge */}
+      {customItemModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1E293B] rounded-2xl max-w-sm w-full shadow-2xl p-5 text-[#0F172A] dark:text-[#F8FAFC]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B] mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#EFF6FF] dark:bg-[#1E293B] text-[#2563EB] dark:text-[#3B82F6] flex items-center justify-center border border-[#BFDBFE] dark:border-[#334155]">
+                  <PlusCircle className="w-4 h-4" />
+                </div>
+                <h3 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.18em]">
+                  Custom / Ad-Hoc Charge
+                </h3>
+              </div>
+              <button
+                onClick={() => setCustomItemModalOpen(false)}
+                className="text-[#64748B] hover:text-[#0F172A] dark:hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomItem} className="space-y-3">
+              <div>
+                <label className="text-[10px] text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider block mb-1">
+                  Item or Service Description *
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Urgent Document Typesetting / Binding 80pgs"
+                  value={customItemName}
+                  onChange={(e) => setCustomItemName(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-lg text-xs text-[#0F172A] dark:text-white focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider block mb-1">
+                    Price (KSh) *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="e.g. 250"
+                    value={customItemPrice}
+                    onChange={(e) => setCustomItemPrice(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-lg text-xs font-mono font-bold text-[#0F172A] dark:text-white focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider block mb-1">
+                    Quantity *
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.1"
+                    required
+                    value={customItemQty}
+                    onChange={(e) => setCustomItemQty(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-lg text-xs font-mono font-bold text-[#0F172A] dark:text-white focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider block mb-1">
+                    Unit Measurement
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="job, page, copy, pc, hr"
+                    value={customItemUnit}
+                    onChange={(e) => setCustomItemUnit(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-lg text-xs text-[#0F172A] dark:text-white focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider block mb-1">
+                    Offering Classification
+                  </label>
+                  <select
+                    value={customItemIsProduct ? 'product' : 'service'}
+                    onChange={(e) => setCustomItemIsProduct(e.target.value === 'product')}
+                    className="w-full px-2 py-1.5 bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-lg text-xs focus:outline-none"
+                  >
+                    <option value="service">Cyber / ICT Service</option>
+                    <option value="product">Retail / Stationery Product</option>
+                  </select>
+                </div>
+              </div>
+
+              {customItemPrice && !isNaN(parseFloat(customItemPrice)) && (
+                <div className="p-2.5 bg-[#EFF6FF] dark:bg-[#1E293B] rounded-xl border border-[#BFDBFE] dark:border-[#334155] text-xs flex justify-between items-center">
+                  <span className="text-[#64748B] dark:text-[#94A3B8]">Line Total:</span>
+                  <span className="font-serif-luxury font-bold text-[#2563EB] dark:text-[#3B82F6]">
+                    {formatKsh((parseFloat(customItemPrice) || 0) * (parseFloat(customItemQty) || 1))}
+                  </span>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCustomItemModalOpen(false)}
+                  className="px-3 py-1.5 bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] text-xs rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-lg shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add to Ticket
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: Recent Sales & Quick Reprint */}
+      {recentSalesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1E293B] rounded-2xl max-w-xl w-full shadow-2xl p-5 text-[#0F172A] dark:text-[#F8FAFC] flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B] mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#EFF6FF] dark:bg-[#1E293B] text-[#2563EB] dark:text-[#3B82F6] flex items-center justify-center border border-[#BFDBFE] dark:border-[#334155]">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.18em]">
+                    Recent Sales & Quick Reprint
+                  </h3>
+                  <p className="text-[10px] text-[#64748B] dark:text-[#94A3B8]">
+                    Last 15 settled transactions on POS
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRecentSalesModalOpen(false)}
+                className="text-[#64748B] hover:text-[#0F172A] dark:hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+              {loadingRecentSales ? (
+                <div className="py-12 flex items-center justify-center text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  <RotateCcw className="w-4 h-4 animate-spin mr-2 text-[#2563EB]" /> Loading recent transactions...
+                </div>
+              ) : recentSales.length === 0 ? (
+                <div className="py-12 text-center text-xs text-[#64748B] dark:text-[#94A3B8]">
+                  No sales recorded yet.
+                </div>
+              ) : (
+                recentSales.map((sale) => (
+                  <div
+                    key={sale.id}
+                    className="p-3 rounded-xl border border-[#E2E8F0] dark:border-[#1E293B] bg-[#F8FAFC] dark:bg-[#1E293B]/40 hover:border-[#2563EB] dark:hover:border-[#3B82F6] transition flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-[#0F172A] dark:text-white">
+                          {sale.receipt_number}
+                        </span>
+                        <span className="text-[10px] text-[#64748B] dark:text-[#94A3B8]">
+                          • {formatDate(sale.created_at)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] mt-0.5 flex items-center gap-2">
+                        <span>Client: <strong className="text-[#0F172A] dark:text-[#F8FAFC]">{sale.customer_name || 'Walk-in'}</strong></span>
+                        <span>•</span>
+                        <span>Attendant: {sale.cashier_name || 'Staff'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="font-serif-luxury font-bold text-sm text-[#2563EB] dark:text-[#3B82F6]">
+                          {formatKsh(sale.total)}
+                        </div>
+                        <div className="text-[9px] uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">
+                          {sale.status}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCompletedSale(sale);
+                          setRecentSalesModalOpen(false);
+                          setReceiptModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-white dark:bg-[#0F172A] hover:bg-[#2563EB] hover:text-white text-[#2563EB] dark:text-[#3B82F6] border border-[#CBD5E1] dark:border-[#334155] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> View / Print
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#1E293B] flex justify-end mt-2">
+              <button
+                type="button"
+                onClick={() => setRecentSalesModalOpen(false)}
+                className="px-4 py-1.5 bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: Keyboard Shortcuts Guide */}
+      {shortcutsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1E293B] rounded-2xl max-w-md w-full shadow-2xl p-5 text-[#0F172A] dark:text-[#F8FAFC]">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B] mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#EFF6FF] dark:bg-[#1E293B] text-[#2563EB] dark:text-[#3B82F6] flex items-center justify-center border border-[#BFDBFE] dark:border-[#334155]">
+                  <Keyboard className="w-4 h-4" />
+                </div>
+                <h3 className="font-serif-luxury font-medium text-xs text-[#0F172A] dark:text-[#F8FAFC] uppercase tracking-[0.18em]">
+                  POS Terminal Hotkeys
+                </h3>
+              </div>
+              <button
+                onClick={() => setShortcutsModalOpen(false)}
+                className="text-[#64748B] hover:text-[#0F172A] dark:hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {[
+                { key: 'F2', desc: 'Focus Search Bar / Scan Barcode' },
+                { key: 'F4', desc: 'Park / Suspend Current Order (Hold Ticket)' },
+                { key: 'F8', desc: 'Add Custom Item / Ad-Hoc Cyber Charge' },
+                { key: 'F9', desc: 'Switch Cart View (Items ⇋ Discounts)' },
+                { key: 'F12', desc: 'Instant Checkout & Payment Tender' },
+                { key: 'Enter', desc: 'Add selected / barcode item directly to cart' },
+                { key: '?', desc: 'Toggle this Shortcuts Guide' },
+                { key: 'Esc', desc: 'Close any open modal or dialog' },
+              ].map((s) => (
+                <div
+                  key={s.key}
+                  className="flex items-center justify-between p-2 rounded-lg bg-[#F8FAFC] dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155]"
+                >
+                  <span className="text-[#64748B] dark:text-[#94A3B8]">{s.desc}</span>
+                  <kbd className="px-2 py-0.5 font-mono text-[11px] font-bold bg-white dark:bg-[#0F172A] text-[#2563EB] dark:text-[#3B82F6] border border-[#CBD5E1] dark:border-[#334155] rounded shadow-2xs">
+                    {s.key}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-3 border-t border-[#E2E8F0] dark:border-[#1E293B] flex justify-end mt-3">
+              <button
+                type="button"
+                onClick={() => setShortcutsModalOpen(false)}
+                className="px-4 py-1.5 bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold rounded-lg cursor-pointer"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

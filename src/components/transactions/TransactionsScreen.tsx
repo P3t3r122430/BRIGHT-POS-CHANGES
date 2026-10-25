@@ -7,7 +7,10 @@ import {
   printReceipt,
   openReceiptInNewTab,
   downloadReceiptFile,
+  downloadReceiptAsPhoto,
   copyReceiptToClipboard,
+  getWhatsAppReceiptUrl,
+  shareReceiptImageOnWhatsApp,
 } from '../../lib/receiptPrinter';
 import {
   Receipt,
@@ -26,7 +29,9 @@ import {
   ExternalLink,
   Download,
   Copy,
-  Check
+  Check,
+  Camera,
+  MessageCircle,
 } from 'lucide-react';
 
 export const TransactionsScreen: React.FC = () => {
@@ -42,6 +47,22 @@ export const TransactionsScreen: React.FC = () => {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [detailsModalOpen, setDetailsModalOpen] = useState<boolean>(false);
   const [receiptCopied, setReceiptCopied] = useState<boolean>(false);
+  const [downloadingPhoto, setDownloadingPhoto] = useState<'jpeg' | 'png' | null>(null);
+  const [waPhone, setWaPhone] = useState<string>('');
+  const [sharingWhatsAppImage, setSharingWhatsAppImage] = useState<boolean>(false);
+  const [waToast, setWaToast] = useState<string | null>(null);
+
+  const handleDownloadPhoto = async (imageType: 'jpeg' | 'png' = 'jpeg') => {
+    if (!selectedSale) return;
+    setDownloadingPhoto(imageType);
+    try {
+      await downloadReceiptAsPhoto(selectedSale, settings, 'thermal', imageType);
+    } catch (err) {
+      console.error('Failed to download receipt photo:', err);
+    } finally {
+      setDownloadingPhoto(null);
+    }
+  };
 
   const handleCopyReceiptText = async () => {
     if (!selectedSale) return;
@@ -49,6 +70,22 @@ export const TransactionsScreen: React.FC = () => {
     if (ok) {
       setReceiptCopied(true);
       setTimeout(() => setReceiptCopied(false), 2500);
+    }
+  };
+
+  const handleShareWhatsAppImage = async () => {
+    if (!selectedSale) return;
+    setSharingWhatsAppImage(true);
+    try {
+      const res = await shareReceiptImageOnWhatsApp(selectedSale, settings, waPhone, 'thermal');
+      if (res.success) {
+        setWaToast(res.message || 'WhatsApp opened with receipt image.');
+        setTimeout(() => setWaToast(null), 4500);
+      }
+    } catch (err) {
+      console.error('Failed to share on WhatsApp:', err);
+    } finally {
+      setSharingWhatsAppImage(false);
     }
   };
 
@@ -89,6 +126,7 @@ export const TransactionsScreen: React.FC = () => {
     try {
       const res = await api.get<{ sale: Sale }>(`/sales/${saleId}`);
       setSelectedSale(res.sale);
+      setWaPhone(res.sale.customer_phone || '');
       setDetailsModalOpen(true);
     } catch (err: any) {
       alert(err.message || 'Failed to load sale details');
@@ -465,6 +503,28 @@ export const TransactionsScreen: React.FC = () => {
 
                 <button
                   type="button"
+                  disabled={downloadingPhoto !== null}
+                  onClick={() => handleDownloadPhoto('jpeg')}
+                  className="px-3 py-1.5 bg-[#181818] hover:bg-[#222222] text-[#E5E5E0] text-[11px] uppercase tracking-wider font-semibold rounded border border-[#282828] hover:border-[#C5A059] transition flex items-center gap-1.5 cursor-pointer"
+                  title="Download full unclipped receipt as JPEG photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-[#C5A059]" />
+                  <span>{downloadingPhoto === 'jpeg' ? 'Saving...' : 'Photo (JPEG)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={downloadingPhoto !== null}
+                  onClick={() => handleDownloadPhoto('png')}
+                  className="px-3 py-1.5 bg-[#181818] hover:bg-[#222222] text-[#888888] hover:text-[#E5E5E0] text-[11px] uppercase tracking-wider font-semibold rounded border border-[#282828] hover:border-[#555] transition flex items-center gap-1.5 cursor-pointer"
+                  title="Download receipt as PNG photo"
+                >
+                  <Camera className="w-3.5 h-3.5 text-[#888888]" />
+                  <span>{downloadingPhoto === 'png' ? 'Saving...' : 'PNG'}</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleCopyReceiptText}
                   className={`px-3 py-1.5 text-[11px] uppercase tracking-wider font-semibold rounded border transition flex items-center gap-1.5 cursor-pointer ${
                     receiptCopied
@@ -502,6 +562,52 @@ export const TransactionsScreen: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Direct WhatsApp Receipt Share */}
+            <div className="pt-3 border-t border-[#222222] flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <MessageCircle className="w-3.5 h-3.5 text-emerald-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Customer WhatsApp phone (e.g. 0712345678)"
+                  value={waPhone}
+                  onChange={(e) => setWaPhone(e.target.value)}
+                  className="w-full pl-8 pr-2 py-1.5 bg-[#141414] border border-[#262626] focus:border-emerald-500 rounded text-xs font-mono text-[#E5E5E0] placeholder-[#666666] outline-none"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={sharingWhatsAppImage}
+                onClick={handleShareWhatsAppImage}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold text-xs rounded transition flex items-center gap-1.5 cursor-pointer shrink-0"
+                title="Share or send full receipt image directly on WhatsApp"
+              >
+                {sharingWhatsAppImage ? (
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin text-white" />
+                ) : (
+                  <Camera className="w-3.5 h-3.5 text-white" />
+                )}
+                <span>{sharingWhatsAppImage ? 'Preparing...' : 'WhatsApp (Image)'}</span>
+              </button>
+
+              <a
+                href={getWhatsAppReceiptUrl(selectedSale, settings, waPhone)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 bg-[#181818] hover:bg-[#222222] text-emerald-400 border border-[#282828] hover:border-emerald-600/60 text-xs font-semibold rounded transition flex items-center gap-1 cursor-pointer shrink-0"
+                title="Send formatted text receipt via WhatsApp link"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> Text
+              </a>
+            </div>
+
+            {waToast && (
+              <div className="mt-2 text-xs text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 p-2 rounded flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>{waToast}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
