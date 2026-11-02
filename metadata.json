@@ -1,0 +1,6 @@
+{
+  "name": "Bright Cyber POS",
+  "description": "Complete POS, service billing, inventory tracking, financial reporting and business management system for Bright Cyber & ICT Centre.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
