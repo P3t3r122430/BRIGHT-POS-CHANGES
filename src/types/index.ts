@@ -72,6 +72,7 @@ export interface Customer {
   name: string;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
   notes?: string | null;
   total_purchases?: number;
   total_spend?: number;
@@ -328,5 +329,80 @@ export interface DashboardStats {
   financialSummary?: FinancialSummaryData;
   categoryRevenue?: Array<{ category_name: string; category_type: string; total_revenue: number }>;
   topItems?: Array<{ name: string; total_quantity: number; total_revenue: number; item_type: string }>;
+  topPerformers?: {
+    bestSellingProduct?: { name: string; quantity_sold: number; total_revenue: number } | null;
+    bestSellingService?: { name: string; count: number; total_revenue: number } | null;
+    topCashier?: { name: string; transactions_count: number; total_sales: number } | null;
+    topCustomer?: { name: string; transactions_count: number; total_spend: number } | null;
+  };
+}
+
+export interface HeldSale {
+  id: number;
+  referenceNumber: string;
+  cashierId: number;
+  cashierName: string;
+  customerId?: number | null;
+  customerName: string;
+  customerPhone?: string | null;
+  items: CartItem[];
+  itemCount: number;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface CustomerStatementLine {
+  id: number;
+  receiptNumber: string;
+  date: string;
+  description: string;
+  status: string;
+  paymentMethod: string;
+  cashier: string;
+  debit: number;
+  payment: number;
+  balance: number;
+}
+
+export interface CustomerStatement {
+  customer: {
+    id: number;
+    customerIdFormatted: string;
+    name: string;
+    phone: string;
+    email: string;
+    address: string;
+    registeredDate: string;
+  };
+  settings: BusinessSettings;
+  period: {
+    startDate: string;
+    endDate: string;
+  };
+  lines: CustomerStatementLine[];
+  summary: {
+    openingBalance: number;
+    totalPurchases: number;
+    totalPayments: number;
+    closingBalance: number;
+    transactionCount: number;
+  };
+  generatedAt: string;
+}
+
+export interface BackupScheduleConfig {
+  enabled: boolean;
+  frequency: 'daily' | 'weekly';
+  time: string;
+  retention: number;
+  lastRun: string | null;
+  lastStatus: 'SUCCESS' | 'FAILED' | null;
+  lastError: string | null;
+  nextScheduledRun: string;
+  backupCount: number;
 }
 

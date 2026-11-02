@@ -162,6 +162,60 @@ dashboardRouter.get('/stats', authenticateToken, (req: AuthenticatedRequest, res
     FROM customers
   `);
 
+  // 4b. Refunds and Voids in Current Period
+  const refundsData = queryOne(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
+    FROM sales
+    WHERE status = 'refunded' AND created_at >= ? AND created_at <= ?
+  `, [current.start, current.end]);
+
+  const voidedData = queryOne(`
+    SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
+    FROM sales
+    WHERE status = 'voided' AND created_at >= ? AND created_at <= ?
+  `, [current.start, current.end]);
+
+  // 4c. Top Performers in Current Period
+  const bestSellingProduct = queryOne(`
+    SELECT si.item_name_snapshot as name, SUM(si.quantity) as quantity_sold, SUM(si.total) as total_revenue
+    FROM sale_items si
+    JOIN sales s ON si.sale_id = s.id
+    WHERE s.status = 'completed' AND si.product_id IS NOT NULL AND s.created_at >= ? AND s.created_at <= ?
+    GROUP BY si.product_id, si.item_name_snapshot
+    ORDER BY quantity_sold DESC, total_revenue DESC
+    LIMIT 1
+  `, [current.start, current.end]);
+
+  const bestSellingService = queryOne(`
+    SELECT si.item_name_snapshot as name, SUM(si.quantity) as count, SUM(si.total) as total_revenue
+    FROM sale_items si
+    JOIN sales s ON si.sale_id = s.id
+    WHERE s.status = 'completed' AND si.service_id IS NOT NULL AND s.created_at >= ? AND s.created_at <= ?
+    GROUP BY si.service_id, si.item_name_snapshot
+    ORDER BY count DESC, total_revenue DESC
+    LIMIT 1
+  `, [current.start, current.end]);
+
+  const topCashier = queryOne(`
+    SELECT u.name, COUNT(s.id) as transactions_count, SUM(s.total) as total_sales
+    FROM sales s
+    JOIN users u ON s.cashier_id = u.id
+    WHERE s.status = 'completed' AND s.created_at >= ? AND s.created_at <= ?
+    GROUP BY s.cashier_id
+    ORDER BY total_sales DESC
+    LIMIT 1
+  `, [current.start, current.end]);
+
+  const topCustomer = queryOne(`
+    SELECT c.name, COUNT(s.id) as transactions_count, SUM(s.total) as total_spend
+    FROM sales s
+    JOIN customers c ON s.customer_id = c.id
+    WHERE s.status = 'completed' AND s.created_at >= ? AND s.created_at <= ?
+    GROUP BY s.customer_id
+    ORDER BY total_spend DESC
+    LIMIT 1
+  `, [current.start, current.end]);
+
   // 5. Previous Period Comparison Metrics
   const prevSales = queryOne(`
     SELECT
@@ -452,9 +506,19 @@ dashboardRouter.get('/stats', authenticateToken, (req: AuthenticatedRequest, res
   const variance = countedCash !== null ? (countedCash - calculatedCash) : 0;
 
   const totalRevenue = currentSales?.total_revenue || 0;
-  const grossProfit = currentProfit?.gross_profit || 0;
+  const grossSales = currentSales?.total_subtotal || totalRevenue;
+  const totalDiscounts = currentSales?.total_discount || 0;
+  const refundCount = refundsData?.count || 0;
+  const refundTotal = refundsData?.total || 0;
+  const voidedCount = voidedData?.count || 0;
+  const voidedTotal = voidedData?.total || 0;
+  const netSales = Math.max(0, totalRevenue - refundTotal);
+  const costOfGoods = currentProfit?.total_cost || 0;
+  const grossProfit = netSales - costOfGoods;
   const totalExpenses = currentExpenses?.total_expenses || 0;
   const netProfit = grossProfit - totalExpenses;
+  const txCount = currentSales?.transaction_count || 0;
+  const averageTransactionValue = txCount > 0 ? Math.round((totalRevenue / txCount) * 100) / 100 : 0;
 
   res.json({
     dateRange: { filter, start: current.start, end: current.end, comparisonLabel },
@@ -463,23 +527,39 @@ dashboardRouter.get('/stats', authenticateToken, (req: AuthenticatedRequest, res
       salesTrend,
       totalProfit: grossProfit,
       profitTrend,
-      totalTransactions: currentSales?.transaction_count || 0,
+      totalTransactions: txCount,
       transactionsTrend,
       newCustomers: currentCustomers?.new_customers_count || 0,
       customersTrend,
       totalCustomers: totalCustomers?.total_customers_count || 0,
       totalRevenue,
-      transactionCount: currentSales?.transaction_count || 0,
-      totalDiscount: currentSales?.total_discount || 0,
+      grossSales,
+      totalDiscount: totalDiscounts,
+      discounts: totalDiscounts,
+      refundCount,
+      refundTotal,
+      voidedCount,
+      voidedTotal,
+      netSales,
+      costOfGoods,
+      cogs: costOfGoods,
       grossProfit,
       totalExpenses,
       netProfit,
+      averageTransactionValue,
       cashTotal,
       mpesaTotal,
       cardTotal,
       otherTotal,
+      netCashPosition: calculatedCash,
       lowStockCount: stockAlerts?.low_stock_count || 0,
       outOfStockCount: stockAlerts?.out_of_stock_count || 0,
+    },
+    topPerformers: {
+      bestSellingProduct: bestSellingProduct || null,
+      bestSellingService: bestSellingService || null,
+      topCashier: topCashier || null,
+      topCustomer: topCustomer || null,
     },
     paymentMethods,
     salesTimeline,
@@ -497,6 +577,7 @@ dashboardRouter.get('/stats', authenticateToken, (req: AuthenticatedRequest, res
       countedCashInHand: countedCash,
       cashInHand,
       variance,
+      netCashPosition: calculatedCash,
       isAudited: countedCash !== null,
       notes: todaySession?.notes || null,
       sessionDate: todayYMD,

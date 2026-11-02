@@ -22,6 +22,7 @@ import { auditLogsRouter } from './server/routes/audit_logs.js';
 import { backupsRouter } from './server/routes/backups.js';
 import { discountsRouter } from './server/routes/discounts.js';
 import { cashDrawerRouter } from './server/routes/cash_drawer.js';
+import { startBackupScheduler } from './server/services/scheduler.js';
 
 const PORT = 3000;
 
@@ -83,6 +84,7 @@ async function startServer() {
     await initializeSchema();
     await seedDatabase();
     console.log('Bright Cyber POS database ready.');
+    startBackupScheduler();
   } catch (error) {
     console.error('Database initialization error:', error);
   }

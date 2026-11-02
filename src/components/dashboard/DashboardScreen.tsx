@@ -9,6 +9,7 @@ import { RecentTransactionsTable } from './RecentTransactionsTable';
 import { LowStockAlerts } from './LowStockAlerts';
 import { PaymentMethodChart } from './PaymentMethodChart';
 import { FinancialSummaryStrip } from './FinancialSummaryStrip';
+import { DailyFinancialSummary } from './DailyFinancialSummary';
 import {
   RotateCcw,
   Calendar,
@@ -168,7 +169,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) 
         </div>
       )}
 
-      {/* 2. KPI Cards Grid */}
+      {/* 2. Daily Financial Overview & Top Performers */}
+      <DailyFinancialSummary stats={stats} loading={loading} onNavigate={onNavigate} />
+
+      {/* 3. KPI Cards Grid */}
       <KPIGrid stats={stats} loading={loading} />
 
       {/* 3. Financial Summary Strip */}

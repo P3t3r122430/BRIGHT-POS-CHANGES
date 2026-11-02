@@ -62,6 +62,214 @@ function generateReceiptNumber(): string {
   return `${prefix}${String(nextSequence).padStart(6, '0')}`;
 }
 
+function generateHeldReference(): string {
+  const currentYear = new Date().getFullYear();
+  const prefix = `HOLD-${currentYear}-`;
+  const lastHeld = queryOne<{ reference_number: string }>(
+    'SELECT reference_number FROM held_sales WHERE reference_number LIKE ? ORDER BY id DESC LIMIT 1',
+    [`${prefix}%`]
+  );
+
+  let nextSequence = 1;
+  if (lastHeld && lastHeld.reference_number) {
+    const parts = lastHeld.reference_number.split('-');
+    if (parts.length >= 3) {
+      const parsedSeq = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(parsedSeq)) {
+        nextSequence = parsedSeq + 1;
+      }
+    }
+  }
+
+  return `${prefix}${String(nextSequence).padStart(5, '0')}`;
+}
+
+// GET: List all active held / parked sales
+salesRouter.get('/held', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const rows = queryAll(`
+    SELECT h.*, u.name as cashier_name
+    FROM held_sales h
+    JOIN users u ON h.cashier_id = u.id
+    ORDER BY h.created_at DESC
+  `);
+
+  const heldSales = rows.map((r: any) => {
+    let items = [];
+    try {
+      items = JSON.parse(r.items_json);
+    } catch {
+      items = [];
+    }
+    return {
+      id: r.id,
+      referenceNumber: r.reference_number,
+      cashierId: r.cashier_id,
+      cashierName: r.cashier_name,
+      customerId: r.customer_id,
+      customerName: r.customer_name || 'Walk-in Client',
+      customerPhone: r.customer_phone,
+      items,
+      itemCount: items.length,
+      subtotal: r.subtotal,
+      discount: r.discount,
+      tax: r.tax,
+      total: r.total,
+      notes: r.notes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
+  });
+
+  res.json({ heldSales });
+});
+
+// POST: Park / hold active sale cart
+salesRouter.post('/hold', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const holdSchema = z.object({
+    customerId: z.number().int().nullable().optional(),
+    customerName: z.string().nullable().optional(),
+    customerPhone: z.string().nullable().optional(),
+    items: z.array(z.any()).min(1, 'Cart cannot be empty to hold'),
+    subtotal: z.number().min(0),
+    discount: z.number().min(0).default(0),
+    tax: z.number().min(0).default(0),
+    total: z.number().min(0),
+    notes: z.string().nullable().optional(),
+  });
+
+  const parsed = holdSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0].message });
+    return;
+  }
+
+  const { customerId, customerName, customerPhone, items, subtotal, discount, tax, total, notes } = parsed.data;
+  const cashierId = req.user?.userId || 1;
+  const referenceNumber = generateHeldReference();
+  const now = new Date().toISOString();
+
+  try {
+    const result = runSql(`
+      INSERT INTO held_sales (
+        reference_number, cashier_id, customer_id, customer_name, customer_phone,
+        items_json, subtotal, discount, tax, total, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      referenceNumber,
+      cashierId,
+      customerId || null,
+      customerName || null,
+      customerPhone || null,
+      JSON.stringify(items),
+      subtotal,
+      discount,
+      tax,
+      total,
+      notes || null,
+      now,
+      now,
+    ]);
+
+    createAuditLog(
+      cashierId,
+      req.user?.username || 'cashier',
+      'hold_sale',
+      'held_sale',
+      result.lastInsertRowid,
+      `Parked sale #${referenceNumber} (${items.length} item(s), KSh ${total}) for ${customerName || 'Walk-in Client'}`
+    );
+
+    res.status(201).json({
+      success: true,
+      message: `Sale parked successfully as #${referenceNumber}`,
+      heldSale: {
+        id: result.lastInsertRowid,
+        referenceNumber,
+        cashierId,
+        cashierName: req.user?.name || 'Cashier',
+        customerId,
+        customerName: customerName || 'Walk-in Client',
+        customerPhone,
+        items,
+        itemCount: items.length,
+        subtotal,
+        discount,
+        tax,
+        total,
+        notes,
+        createdAt: now,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to hold sale' });
+  }
+});
+
+// GET: Retrieve single held sale details
+salesRouter.get('/held/:id', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const id = Number(req.params.id);
+  const row = queryOne<any>(`
+    SELECT h.*, u.name as cashier_name
+    FROM held_sales h
+    JOIN users u ON h.cashier_id = u.id
+    WHERE h.id = ?
+  `, [id]);
+
+  if (!row) {
+    res.status(404).json({ error: 'Held sale not found' });
+    return;
+  }
+
+  let items = [];
+  try {
+    items = JSON.parse(row.items_json);
+  } catch {
+    items = [];
+  }
+
+  res.json({
+    heldSale: {
+      id: row.id,
+      referenceNumber: row.reference_number,
+      cashierId: row.cashier_id,
+      cashierName: row.cashier_name,
+      customerId: row.customer_id,
+      customerName: row.customer_name || 'Walk-in Client',
+      customerPhone: row.customer_phone,
+      items,
+      subtotal: row.subtotal,
+      discount: row.discount,
+      tax: row.tax,
+      total: row.total,
+      notes: row.notes,
+      createdAt: row.created_at,
+    },
+  });
+});
+
+// DELETE: Cancel / discard held sale
+salesRouter.delete('/held/:id', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const id = Number(req.params.id);
+  const existing = queryOne<any>('SELECT * FROM held_sales WHERE id = ?', [id]);
+  if (!existing) {
+    res.status(404).json({ error: 'Held sale record not found' });
+    return;
+  }
+
+  runSql('DELETE FROM held_sales WHERE id = ?', [id]);
+
+  createAuditLog(
+    req.user?.userId || null,
+    req.user?.username || 'cashier',
+    'cancel_held_sale',
+    'held_sale',
+    id,
+    `Cancelled held sale #${existing.reference_number} (KSh ${existing.total})`
+  );
+
+  res.json({ success: true, message: `Held ticket #${existing.reference_number} cancelled.` });
+});
+
 // POST: Complete atomic sale checkout
 salesRouter.post('/', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
   const parsed = checkoutSchema.safeParse(req.body);

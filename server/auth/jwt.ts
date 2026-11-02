@@ -27,14 +27,15 @@ function getOrInitJwtSecret(): string {
     }
     // Generate persistent secret
     const newSecret = crypto.randomBytes(64).toString('hex');
-    fs.writeFileSync(SECRET_FILE, newSecret, 'utf8');
+    fs.writeFileSync(SECRET_FILE, newSecret, { encoding: 'utf8', mode: 0o600 });
     process.env.JWT_SECRET = newSecret;
     return newSecret;
   } catch (e) {
-    // Fallback to static secure secret so tokens remain valid across restarts
-    const fallback = 'brightcyber-pos-enterprise-secure-jwt-token-secret-key-2026-kenya';
-    process.env.JWT_SECRET = fallback;
-    return fallback;
+    // In-memory cryptographically random secret if disk write fails
+    console.warn('[SECURITY] Could not persist secret file, using ephemeral cryptographically secure secret.');
+    const ephemeralSecret = crypto.randomBytes(64).toString('hex');
+    process.env.JWT_SECRET = ephemeralSecret;
+    return ephemeralSecret;
   }
 }
 

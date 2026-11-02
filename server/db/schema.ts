@@ -230,6 +230,26 @@ export async function initializeSchema(): Promise<void> {
       updated_at TEXT NOT NULL
     );
 
+    -- Held / Parked Sales table
+    CREATE TABLE IF NOT EXISTS held_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference_number TEXT UNIQUE NOT NULL,
+      cashier_id INTEGER NOT NULL,
+      customer_id INTEGER,
+      customer_name TEXT,
+      customer_phone TEXT,
+      items_json TEXT NOT NULL,
+      subtotal REAL NOT NULL,
+      discount REAL NOT NULL DEFAULT 0,
+      tax REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (cashier_id) REFERENCES users (id),
+      FOREIGN KEY (customer_id) REFERENCES customers (id)
+    );
+
     -- Indexes for fast lookups
     CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku);
     CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
@@ -237,6 +257,7 @@ export async function initializeSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_drawer_sessions_date ON cash_drawer_sessions(session_date);
+    CREATE INDEX IF NOT EXISTS idx_held_sales_created ON held_sales(created_at);
   `;
 
   // Run schema statement batches
@@ -249,6 +270,13 @@ export async function initializeSchema(): Promise<void> {
     runSql(statement);
   }
 
+  // Safe migrations for customers table
+  try {
+    runSql('ALTER TABLE customers ADD COLUMN address TEXT');
+  } catch {
+    // Column already exists
+  }
+
   // Safe migrations for existing business_settings columns
   const migrationColumns = [
     { col: 'services_mpesa_paybill', def: "TEXT DEFAULT '4298298'" },
@@ -256,6 +284,13 @@ export async function initializeSchema(): Promise<void> {
     { col: 'products_mpesa_paybill', def: "TEXT DEFAULT '247247'" },
     { col: 'products_mpesa_account', def: "TEXT DEFAULT '768726'" },
     { col: 'default_opening_float', def: "REAL DEFAULT 10000" },
+    { col: 'auto_backup_enabled', def: "INTEGER DEFAULT 1" },
+    { col: 'auto_backup_frequency', def: "TEXT DEFAULT 'daily'" },
+    { col: 'auto_backup_time', def: "TEXT DEFAULT '23:00'" },
+    { col: 'auto_backup_retention', def: "INTEGER DEFAULT 7" },
+    { col: 'auto_backup_last_run', def: "TEXT" },
+    { col: 'auto_backup_last_status', def: "TEXT" },
+    { col: 'auto_backup_last_error', def: "TEXT" },
   ];
 
   for (const m of migrationColumns) {

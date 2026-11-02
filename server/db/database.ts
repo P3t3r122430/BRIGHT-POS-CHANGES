@@ -146,17 +146,29 @@ export function runTransaction<T>(callback: () => T): T {
   }
 }
 
+// Verify buffer contains valid SQLite magic header
+export function validateSqliteBuffer(buffer: Buffer): boolean {
+  if (!buffer || buffer.length < 16) return false;
+  const header = buffer.subarray(0, 16).toString('utf8');
+  return header.startsWith('SQLite format 3');
+}
+
 // Create timestamped backup
-export function createBackup(): { filename: string; filepath: string; size: number; timestamp: string } {
+export function createBackup(prefix = 'brightcyber-backup'): { filename: string; filepath: string; size: number; timestamp: string } {
   if (!dbInstance) throw new Error('Database not initialized');
   saveDb();
   const now = new Date();
   const timestamp = now.toISOString().replace(/[:.]/g, '-');
-  const filename = `brightcyber-backup-${timestamp}.db`;
+  const filename = `${prefix}-${timestamp}.db`;
   const filepath = path.join(BACKUP_DIR, filename);
 
   const data = dbInstance.export();
-  fs.writeFileSync(filepath, Buffer.from(data));
+  const buffer = Buffer.from(data);
+  if (!validateSqliteBuffer(buffer)) {
+    throw new Error('Exported database failed SQLite integrity check');
+  }
+
+  fs.writeFileSync(filepath, buffer);
   const stats = fs.statSync(filepath);
 
   return {
@@ -167,25 +179,72 @@ export function createBackup(): { filename: string; filepath: string; size: numb
   };
 }
 
+// Prune old backups based on retention policy
+export function pruneOldBackups(retentionCount: number): number {
+  if (retentionCount <= 0 || !fs.existsSync(BACKUP_DIR)) return 0;
+  
+  const allBackups = listBackups();
+  // Safety rule: Never delete if total backups <= 1 or <= retentionCount
+  if (allBackups.length <= retentionCount || allBackups.length <= 1) {
+    return 0;
+  }
+
+  const toDelete = allBackups.slice(retentionCount);
+  let deletedCount = 0;
+
+  for (const b of toDelete) {
+    try {
+      const fullPath = path.join(BACKUP_DIR, b.filename);
+      // Safety check: Never delete current live database
+      if (path.resolve(fullPath) === path.resolve(DB_FILE)) {
+        continue;
+      }
+      if (fs.existsSync(fullPath)) {
+        fs.unlinkSync(fullPath);
+        deletedCount++;
+      }
+    } catch (err) {
+      console.warn(`Failed to prune old backup ${b.filename}:`, err);
+    }
+  }
+
+  return deletedCount;
+}
+
 // Restore database from a backup file or uploaded buffer
-export async function restoreBackup(backupFilePathOrBuffer: string | Buffer): Promise<void> {
+export async function restoreBackup(backupFilePathOrBuffer: string | Buffer): Promise<{ emergencyBackup: string }> {
   if (!SQL) {
     SQL = await initSqlJs();
   }
 
-  // Pre-backup current database before restoring
-  try {
-    createBackup();
-  } catch (e) {
-    console.warn('Could not make pre-restore backup:', e);
-  }
-
   let buffer: Buffer;
   if (typeof backupFilePathOrBuffer === 'string') {
+    if (!fs.existsSync(backupFilePathOrBuffer)) {
+      throw new Error(`Backup file does not exist: ${backupFilePathOrBuffer}`);
+    }
     buffer = fs.readFileSync(backupFilePathOrBuffer);
   } else {
     buffer = backupFilePathOrBuffer;
   }
+
+  // Pre-validate target backup header
+  if (!validateSqliteBuffer(buffer)) {
+    throw new Error('Target backup file is not a valid SQLite database.');
+  }
+
+  // Mandatory Emergency Pre-Restore Backup of active database
+  let emergencyFilename = '';
+  try {
+    const emg = createBackup('brightcyber-emergency-pre-restore');
+    emergencyFilename = emg.filename;
+  } catch (e) {
+    console.warn('Could not make pre-restore backup:', e);
+  }
+
+  // Test loading target into temporary instance first
+  const testDb = new SQL.Database(buffer);
+  testDb.exec('SELECT count(*) FROM sqlite_master;');
+  testDb.close();
 
   if (dbInstance) {
     dbInstance.close();
@@ -194,6 +253,8 @@ export async function restoreBackup(backupFilePathOrBuffer: string | Buffer): Pr
   dbInstance = new SQL.Database(buffer);
   dbInstance.run('PRAGMA foreign_keys = ON;');
   saveDb();
+
+  return { emergencyBackup: emergencyFilename };
 }
 
 // List all backups

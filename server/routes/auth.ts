@@ -34,19 +34,19 @@ authRouter.post('/login', (req, res): void => {
     [username.trim(), username.trim()]
   );
 
-  console.log('[AUTH] Looking up user:', username.trim(), 'found:', user ? user.username : 'null');
   if (!user) {
+    createAuditLog(null, username.trim().slice(0, 50), 'login_failed', 'auth', null, 'Failed login attempt: account not found');
     res.status(401).json({ error: 'Invalid username or password.' });
     return;
   }
 
   if (user.active !== 1) {
+    createAuditLog(user.id, user.username, 'login_failed', 'auth', user.id, 'Failed login attempt on disabled account');
     res.status(403).json({ error: 'This user account has been disabled. Please contact the administrator.' });
     return;
   }
 
   const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
-  console.log('[AUTH] password valid?', isPasswordValid);
   if (!isPasswordValid) {
     createAuditLog(user.id, user.username, 'login_failed', 'auth', user.id, 'Failed login attempt with incorrect password');
     res.status(401).json({ error: 'Invalid username or password.' });

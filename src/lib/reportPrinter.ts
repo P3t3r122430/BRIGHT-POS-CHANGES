@@ -2,7 +2,7 @@ import { BusinessSettings } from '../types';
 import { formatKsh, formatNumber } from './utils';
 
 export interface ReportPrintData {
-  reportType: 'pnl' | 'sales' | 'products' | 'services' | 'inventory';
+  reportType: 'pnl' | 'sales' | 'products' | 'services' | 'inventory' | 'cashiers' | 'customers';
   startDate?: string;
   endDate?: string;
   data: any;
@@ -294,6 +294,7 @@ export function generateReportHtml(params: ReportPrintData): string {
   } else if (reportType === 'inventory') {
     title = 'Capital Stock & Inventory Valuation Statement';
     const s = data?.summary || {};
+    const movements = Array.isArray(data?.movements) ? data.movements : [];
 
     contentHtml = `
       <div class="kpi-grid">
@@ -314,6 +315,138 @@ export function generateReportHtml(params: ReportPrintData): string {
           <div class="kpi-val">${formatNumber(s.totalUnits || 0)}</div>
         </div>
       </div>
+
+      ${movements.length > 0 ? `
+        <div class="audit-section" style="margin-top: 20px;">
+          <div class="section-title">RECENT STOCK MOVEMENTS & ADJUSTMENTS</div>
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Date / Time</th>
+                <th>Product SKU</th>
+                <th>Type</th>
+                <th class="text-center">Delta Qty</th>
+                <th class="text-center">Stock Post</th>
+                <th>Author</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${movements.slice(0, 30).map((m: any) => `
+                <tr>
+                  <td class="font-mono">${m.created_at ? new Date(m.created_at).toLocaleString() : '-'}</td>
+                  <td class="bold font-mono">${m.sku || m.product_name || `Product #${m.product_id}`}</td>
+                  <td><span class="badge">${m.movement_type}</span></td>
+                  <td class="text-center font-mono ${Number(m.quantity_change) >= 0 ? 'text-green' : 'text-red'}">${m.quantity_change > 0 ? '+' : ''}${m.quantity_change}</td>
+                  <td class="text-center font-mono">${m.quantity_after ?? '-'}</td>
+                  <td>${m.created_by_name || 'System'}</td>
+                  <td>${m.notes || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `;
+  } else if (reportType === 'cashiers') {
+    title = 'Staff Cashier Shift & Settlement Audit';
+    const cashiers = Array.isArray(data?.cashiers) ? data.cashiers : Array.isArray(data) ? data : [];
+    const totalRev = cashiers.reduce((acc: number, c: any) => acc + Number(c.net_sales || c.total_sales || 0), 0);
+    const totalTxns = cashiers.reduce((acc: number, c: any) => acc + Number(c.total_transactions || 0), 0);
+
+    contentHtml = `
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Cashier Net Sales</div>
+          <div class="kpi-val">${formatKsh(totalRev)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Transactions Processed</div>
+          <div class="kpi-val">${formatNumber(totalTxns)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Active Staff Audited</div>
+          <div class="kpi-val">${cashiers.length}</div>
+        </div>
+      </div>
+
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Cashier Name</th>
+            <th>Username</th>
+            <th class="text-center">Transactions</th>
+            <th class="text-right">Gross Sales</th>
+            <th class="text-right">Discounts</th>
+            <th class="text-right">Refunds</th>
+            <th class="text-right">Net Sales</th>
+            <th class="text-right">Avg Ticket</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cashiers.map((c: any) => `
+            <tr>
+              <td class="bold">${c.name}</td>
+              <td class="font-mono text-muted">${c.username}</td>
+              <td class="text-center font-mono">${c.total_transactions || 0}</td>
+              <td class="text-right font-mono">${formatKsh(c.gross_sales || c.total_sales || 0)}</td>
+              <td class="text-right font-mono text-muted">${formatKsh(c.discounts || 0)}</td>
+              <td class="text-right font-mono text-red">${formatKsh(c.refunds || 0)}</td>
+              <td class="text-right bold font-mono">${formatKsh(c.net_sales || c.total_sales || 0)}</td>
+              <td class="text-right font-mono">${formatKsh(c.average_transaction_value || 0)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } else if (reportType === 'customers') {
+    title = 'Customer Accounts & Patronage Performance Report';
+    const customers = Array.isArray(data?.customers) ? data.customers : Array.isArray(data) ? data : [];
+    const totalSpent = customers.reduce((acc: number, c: any) => acc + Number(c.total_spent || 0), 0);
+    const totalPurchases = customers.reduce((acc: number, c: any) => acc + Number(c.total_purchases || 0), 0);
+
+    contentHtml = `
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Client Spend</div>
+          <div class="kpi-val">${formatKsh(totalSpent)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Purchases Recorded</div>
+          <div class="kpi-val">${formatNumber(totalPurchases)}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Total Registered Patrons</div>
+          <div class="kpi-val">${customers.length}</div>
+        </div>
+      </div>
+
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Customer ID</th>
+            <th>Name</th>
+            <th>Contact Phone</th>
+            <th class="text-center">Purchases</th>
+            <th class="text-right">Lifetime Spend</th>
+            <th class="text-right">Average Order</th>
+            <th>Last Purchase</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${customers.map((c: any) => `
+            <tr>
+              <td class="font-mono bold">CUST-${String(c.id).padStart(4, '0')}</td>
+              <td class="bold">${c.name}</td>
+              <td class="font-mono">${c.phone || '-'}</td>
+              <td class="text-center font-mono">${c.total_purchases || 0}</td>
+              <td class="text-right bold font-mono">${formatKsh(c.total_spent || 0)}</td>
+              <td class="text-right font-mono">${formatKsh(c.average_ticket || 0)}</td>
+              <td class="font-mono text-muted">${c.last_purchase_date ? new Date(c.last_purchase_date).toLocaleDateString() : 'Never'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     `;
   }
 

@@ -208,10 +208,12 @@ export const PosScreen: React.FC = () => {
   const [heldOrdersModalOpen, setHeldOrdersModalOpen] = useState<boolean>(false);
   const [heldOrders, setHeldOrders] = useState<Array<{
     id: string;
+    referenceNumber?: string;
     createdAt: string;
     customerId: number | null;
     customerName: string;
     customerPhone?: string;
+    cashierName?: string;
     items: CartItem[];
     subtotal: number;
     globalDiscount: number;
@@ -307,16 +309,38 @@ export const PosScreen: React.FC = () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const [servRes, prodRes, custRes, discRes] = await Promise.all([
+      const [servRes, prodRes, custRes, discRes, heldRes] = await Promise.all([
         api.get<{ services: Service[] }>('/services?active_only=true'),
         api.get<{ products: Product[] }>('/products?active_only=true'),
         api.get<{ customers: Customer[] }>('/customers'),
         api.get<{ discounts: Discount[] }>('/discounts?active_only=true').catch(() => ({ discounts: [] })),
+        api.get<{ heldSales: any[] }>('/sales/held').catch(() => ({ heldSales: [] })),
       ]);
       setServices(servRes.services || []);
       setProducts(prodRes.products || []);
       setCustomers(custRes.customers || []);
       setAvailableDiscounts(discRes?.discounts || []);
+
+      if (heldRes?.heldSales && Array.isArray(heldRes.heldSales) && heldRes.heldSales.length > 0) {
+        const serverHeld = heldRes.heldSales.map((h: any) => ({
+          id: String(h.id),
+          referenceNumber: h.referenceNumber,
+          createdAt: h.createdAt,
+          customerId: h.customerId,
+          customerName: h.customerName || 'Walk-in Client',
+          customerPhone: h.customerPhone,
+          cashierName: h.cashierName || 'Cashier',
+          items: h.items || [],
+          subtotal: h.subtotal || 0,
+          globalDiscount: h.discount || 0,
+          directDiscountInput: '',
+          directDiscountType: 'fixed' as const,
+          appliedDiscountRule: null,
+          cartNotes: h.notes || '',
+          grandTotal: h.total || 0,
+        }));
+        setHeldOrders(serverHeld);
+      }
     } catch (err: any) {
       if (err?.status === 401) {
         // Handled globally by auth:unauthorized event
@@ -1054,7 +1078,7 @@ export const PosScreen: React.FC = () => {
   const grandTotal = Math.max(0, subtotal - totalDiscount + taxAmount);
 
   // --- POS HANDLER: Park Current Order / Hold Ticket ---
-  const handleParkCurrentOrder = () => {
+  const handleParkCurrentOrder = async () => {
     if (cart.length === 0) {
       playAudioFeedback('alert');
       setStockToast({
@@ -1065,24 +1089,68 @@ export const PosScreen: React.FC = () => {
       return;
     }
 
-    const newHeld = {
-      id: `hold-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      customerId: selectedCustomerId,
-      customerName: selectedCustomer ? selectedCustomer.name : 'Walk-in Client',
-      customerPhone: selectedCustomer?.phone || undefined,
-      items: [...cart],
-      subtotal,
-      globalDiscount,
-      directDiscountInput,
-      directDiscountType,
-      appliedDiscountRule,
-      cartNotes,
-      grandTotal,
-    };
+    const tempId = `hold-${Date.now()}`;
+    const custName = selectedCustomer ? selectedCustomer.name : 'Walk-in Client';
+    const custPhone = selectedCustomer?.phone || undefined;
+    const currentNotes = cartNotes;
+    const currentTotal = grandTotal;
 
-    const updated = [newHeld, ...heldOrders];
-    saveHeldOrders(updated);
+    // Save to server first
+    try {
+      const serverRes = await api.post<{ success: boolean; heldSale: any }>('/sales/hold', {
+        customerId: selectedCustomerId,
+        customerName: custName,
+        customerPhone: custPhone || null,
+        items: cart,
+        subtotal,
+        discount: totalDiscount,
+        tax: taxAmount,
+        total: currentTotal,
+        notes: currentNotes || null,
+      });
+
+      const savedSale = serverRes?.heldSale;
+      const newHeld = {
+        id: String(savedSale?.id || tempId),
+        referenceNumber: savedSale?.referenceNumber || `HOLD-${Date.now()}`,
+        createdAt: savedSale?.createdAt || new Date().toISOString(),
+        customerId: selectedCustomerId,
+        customerName: custName,
+        customerPhone: custPhone,
+        cashierName: user?.name || 'Cashier',
+        items: [...cart],
+        subtotal,
+        globalDiscount,
+        directDiscountInput,
+        directDiscountType,
+        appliedDiscountRule,
+        cartNotes: currentNotes,
+        grandTotal: currentTotal,
+      };
+
+      const updated = [newHeld, ...heldOrders.filter(h => h.id !== newHeld.id)];
+      saveHeldOrders(updated);
+    } catch (err: any) {
+      console.warn('Could not save held sale to server, saving locally:', err);
+      const fallbackHeld = {
+        id: tempId,
+        referenceNumber: `HOLD-${Date.now().toString().slice(-6)}`,
+        createdAt: new Date().toISOString(),
+        customerId: selectedCustomerId,
+        customerName: custName,
+        customerPhone: custPhone,
+        cashierName: user?.name || 'Cashier',
+        items: [...cart],
+        subtotal,
+        globalDiscount,
+        directDiscountInput,
+        directDiscountType,
+        appliedDiscountRule,
+        cartNotes: currentNotes,
+        grandTotal: currentTotal,
+      };
+      saveHeldOrders([fallbackHeld, ...heldOrders]);
+    }
 
     // Reset current active cart
     setCart([]);
@@ -1096,7 +1164,7 @@ export const PosScreen: React.FC = () => {
     setStockToast({
       type: 'success',
       title: 'Order Parked / Held',
-      message: `Ticket for ${newHeld.customerName} (${newHeld.items.length} items, ${formatKsh(grandTotal)}) held. Ready for next client.`,
+      message: `Ticket for ${custName} (${cart.length} items, ${formatKsh(currentTotal)}) held. Ready for next client.`,
     });
   };
 
@@ -1114,6 +1182,11 @@ export const PosScreen: React.FC = () => {
     setAppliedDiscountRule(order.appliedDiscountRule || null);
     setCartNotes(order.cartNotes || '');
 
+    // Delete from backend if not local temporary
+    if (order.id && !order.id.startsWith('hold-')) {
+      api.delete(`/sales/held/${order.id}`).catch(err => console.warn('Could not delete resumed held sale on server:', err));
+    }
+
     const filtered = heldOrders.filter((h) => h.id !== order.id);
     saveHeldOrders(filtered);
     setHeldOrdersModalOpen(false);
@@ -1122,18 +1195,26 @@ export const PosScreen: React.FC = () => {
     setStockToast({
       type: 'success',
       title: 'Held Order Restored',
-      message: `Restored order for ${order.customerName} (${order.items.length} items).`,
+      message: `Restored order ${order.referenceNumber || '#' + order.id} for ${order.customerName} (${order.items.length} items).`,
     });
   };
 
   const handleDeleteHeldOrder = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    if (!confirm('Are you sure you want to cancel and remove this held order?')) {
+      return;
+    }
+
+    if (id && !id.startsWith('hold-')) {
+      api.delete(`/sales/held/${id}`).catch(err => console.warn('Could not delete held sale on server:', err));
+    }
+
     const filtered = heldOrders.filter((h) => h.id !== id);
     saveHeldOrders(filtered);
     setStockToast({
       type: 'success',
       title: 'Held Order Removed',
-      message: 'Suspended order removed.',
+      message: 'Suspended order removed from queue.',
     });
   };
 
@@ -3483,6 +3564,9 @@ export const PosScreen: React.FC = () => {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
+                          <span className="px-1.5 py-0.5 rounded bg-[#2563EB]/10 dark:bg-[#3B82F6]/20 text-[#2563EB] dark:text-[#3B82F6] font-mono text-[10px] font-bold">
+                            {h.referenceNumber || `#${h.id}`}
+                          </span>
                           <span className="font-bold text-xs text-[#0F172A] dark:text-white">
                             {h.customerName}
                           </span>
@@ -3492,9 +3576,14 @@ export const PosScreen: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] flex items-center gap-2 mt-0.5">
+                        <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="font-medium text-[#2563EB] dark:text-[#3B82F6]">
+                            Cashier: {h.cashierName || user?.name || 'Cashier'}
+                          </span>
+                          <span>•</span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
+                            {new Date(h.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}{' '}
                             {new Date(h.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                           <span>•</span>
@@ -3510,7 +3599,8 @@ export const PosScreen: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
+                        <div className="text-[10px] uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">Total</div>
                         <span className="text-xs font-serif-luxury font-bold text-[#2563EB] dark:text-[#3B82F6]">
                           {formatKsh(h.grandTotal)}
                         </span>
