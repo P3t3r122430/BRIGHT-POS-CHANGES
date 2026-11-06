@@ -18,6 +18,10 @@ settingsRouter.get('/', authenticateToken, (_req: AuthenticatedRequest, res: Res
     settings = queryOne('SELECT * FROM business_settings WHERE id = 1');
   }
 
+  if (settings && (settings.auto_lock_timeout_minutes == null || settings.auto_lock_timeout_minutes <= 0)) {
+    settings.auto_lock_timeout_minutes = 15;
+  }
+
   res.json({ settings });
 });
 
@@ -41,6 +45,14 @@ settingsRouter.put('/', authenticateToken, requireAdmin, (req: AuthenticatedRequ
     services_mpesa_account: z.string().trim().nullable().optional(),
     products_mpesa_paybill: z.string().trim().nullable().optional(),
     products_mpesa_account: z.string().trim().nullable().optional(),
+    auto_lock_timeout_minutes: z.union([
+      z.literal(1),
+      z.literal(5),
+      z.literal(10),
+      z.literal(15),
+      z.literal(30),
+      z.literal(60),
+    ]).default(15),
   });
 
   const parsed = schema.safeParse(req.body);
@@ -77,6 +89,7 @@ settingsRouter.put('/', authenticateToken, requireAdmin, (req: AuthenticatedRequ
       services_mpesa_account = ?,
       products_mpesa_paybill = ?,
       products_mpesa_account = ?,
+      auto_lock_timeout_minutes = ?,
       updated_at = ?
     WHERE id = 1
   `, [
@@ -97,6 +110,7 @@ settingsRouter.put('/', authenticateToken, requireAdmin, (req: AuthenticatedRequ
     servAcc,
     prodPaybill,
     prodAcc,
+    d.auto_lock_timeout_minutes,
     now,
   ]);
 
@@ -106,7 +120,7 @@ settingsRouter.put('/', authenticateToken, requireAdmin, (req: AuthenticatedRequ
     'update_settings',
     'settings',
     1,
-    `Admin updated business settings for "${d.business_name}"`
+    `Admin updated business settings for "${d.business_name}" (Auto-Lock: ${d.auto_lock_timeout_minutes}m)`
   );
 
   res.json({ success: true, message: 'Settings updated successfully' });

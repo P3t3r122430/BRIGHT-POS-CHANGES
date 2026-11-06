@@ -11,11 +11,13 @@ import {
   Building,
   Printer,
   Smartphone,
-  ShieldAlert,
-  Percent,
   Palette,
   Sun,
-  Moon
+  Moon,
+  Lock,
+  Clock,
+  ShieldCheck,
+  Percent,
 } from 'lucide-react';
 
 export const SettingsScreen: React.FC = () => {
@@ -35,6 +37,7 @@ export const SettingsScreen: React.FC = () => {
   const [servicesPaybill, setServicesPaybill] = useState<string>('4298298');
   const [servicesAccount, setServicesAccount] = useState<string>('0350494');
   const [mpesaPaybill, setMpesaPaybill] = useState<string>('');
+  const [autoLockTimeout, setAutoLockTimeout] = useState<number>(15);
 
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
@@ -55,6 +58,7 @@ export const SettingsScreen: React.FC = () => {
       setServicesPaybill(settings.services_mpesa_paybill || '4298298');
       setServicesAccount(settings.services_mpesa_account || '0350494');
       setMpesaPaybill(settings.mpesa_paybill_or_till || 'Cyber & ICT Services: Paybill 4298298 (Acc: 0350494)');
+      setAutoLockTimeout(settings.auto_lock_timeout_minutes ?? 15);
     }
   }, [settings]);
 
@@ -79,6 +83,7 @@ export const SettingsScreen: React.FC = () => {
         services_mpesa_paybill: servicesPaybill.trim() || '4298298',
         services_mpesa_account: servicesAccount.trim() || '0350494',
         mpesa_paybill_or_till: mpesaPaybill.trim() || `Cyber & ICT Services: Paybill ${servicesPaybill} (Acc: ${servicesAccount})`,
+        auto_lock_timeout_minutes: autoLockTimeout,
       });
 
       await refreshSettings();
@@ -336,6 +341,65 @@ export const SettingsScreen: React.FC = () => {
                   !taxEnabled ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               />
+            </div>
+          </div>
+        </div>
+
+        {/* Section 4: Security & Station Protection */}
+        <div id="section-security-autolock" className="bg-[#0D0D0D] border border-[#222222] rounded p-5 space-y-4">
+          <div className="flex items-center justify-between pb-2 border-b border-[#222222]">
+            <div className="flex items-center gap-2 text-xs font-serif-luxury font-medium text-[#C5A059] uppercase tracking-[0.18em]">
+              <Lock className="w-3.5 h-3.5 text-[#C5A059]" /> Security & Auto-Lock Timeout
+            </div>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">
+              Admin Controlled
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-[10px] text-[#777777] uppercase tracking-wider block mb-1">
+                Operator Inactivity Auto-Lock Duration
+              </label>
+              <p className="text-[11px] text-[#888888] leading-relaxed mb-3">
+                The terminal automatically locks when the active operator has been inactive (no mouse movement, clicks, keyboard typing, or touch interaction) for this duration. Unfinished sales carts and shift registers are safely preserved upon lock.
+              </p>
+            </div>
+
+            {/* Quick Timeout Option Cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1">
+              {[
+                { label: '1 Minute', val: 1, desc: 'High security' },
+                { label: '5 Minutes', val: 5, desc: 'Busy station' },
+                { label: '10 Minutes', val: 10, desc: 'Recommended' },
+                { label: '15 Minutes', val: 15, desc: 'Standard POS' },
+                { label: '30 Minutes', val: 30, desc: 'Extended' },
+                { label: '1 Hour', val: 60, desc: 'Shift maximum' },
+              ].map((opt) => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  onClick={() => setAutoLockTimeout(opt.val)}
+                  className={`p-3 rounded-lg border text-left transition cursor-pointer flex flex-col justify-between ${
+                    autoLockTimeout === opt.val
+                      ? 'border-[#C5A059] bg-[#1E1A10] text-[#E5E5E0] ring-1 ring-[#C5A059]/40 shadow'
+                      : 'border-[#262626] bg-[#141414] text-[#888888] hover:border-[#444444] hover:text-[#E5E5E0]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold font-mono text-white">{opt.label}</span>
+                    {autoLockTimeout === opt.val && (
+                      <span className="w-2 h-2 rounded-full bg-[#C5A059]" />
+                    )}
+                  </div>
+                  <span className="text-[10px] text-[#666666] mt-1">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 text-[11px] text-[#666666] flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-[#C5A059]" />
+              <span>Current configured timeout: <strong className="text-white font-mono">{autoLockTimeout} minute{autoLockTimeout > 1 ? 's' : ''}</strong>. Applies to all active operators upon saving.</span>
             </div>
           </div>
         </div>

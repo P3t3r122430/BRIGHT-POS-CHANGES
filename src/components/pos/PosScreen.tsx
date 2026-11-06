@@ -84,11 +84,63 @@ export const PosScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Cart State
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
-  const [cartNotes, setCartNotes] = useState<string>('');
-  const [globalDiscount, setGlobalDiscount] = useState<number>(0);
+  // Cart State (Persisted during auto-lock & session pauses)
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const draft = sessionStorage.getItem('brightcyber_active_draft_sale');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        if (Array.isArray(parsed.cart)) return parsed.cart;
+      }
+    } catch {}
+    return [];
+  });
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(() => {
+    try {
+      const draft = sessionStorage.getItem('brightcyber_active_draft_sale');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        return parsed.selectedCustomerId ?? null;
+      }
+    } catch {}
+    return null;
+  });
+  const [cartNotes, setCartNotes] = useState<string>(() => {
+    try {
+      const draft = sessionStorage.getItem('brightcyber_active_draft_sale');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        return parsed.cartNotes ?? '';
+      }
+    } catch {}
+    return '';
+  });
+  const [globalDiscount, setGlobalDiscount] = useState<number>(() => {
+    try {
+      const draft = sessionStorage.getItem('brightcyber_active_draft_sale');
+      if (draft) {
+        const parsed = JSON.parse(draft);
+        return parsed.globalDiscount ?? 0;
+      }
+    } catch {}
+    return 0;
+  });
+
+  // Preserve active/unfinished sale during auto-lock or page refresh
+  useEffect(() => {
+    try {
+      if (cart.length > 0 || cartNotes || selectedCustomerId) {
+        sessionStorage.setItem('brightcyber_active_draft_sale', JSON.stringify({
+          cart,
+          selectedCustomerId,
+          cartNotes,
+          globalDiscount,
+        }));
+      } else {
+        sessionStorage.removeItem('brightcyber_active_draft_sale');
+      }
+    } catch {}
+  }, [cart, selectedCustomerId, cartNotes, globalDiscount]);
 
   // Cart Navigation & Discounts State
   const [cartTab, setCartTab] = useState<'items' | 'discounts'>('items');

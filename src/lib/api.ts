@@ -10,13 +10,36 @@ export class ApiError extends Error {
 }
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem('brightcyber_token');
+  // Use sessionStorage so closing the browser/application terminates the session
+  const token = sessionStorage.getItem('brightcyber_token');
+  if (token) return token;
+
+  // Cleanup any old legacy tokens in localStorage if session was closed
+  const sessionActive = sessionStorage.getItem('brightcyber_session_active');
+  const legacyToken = localStorage.getItem('brightcyber_token');
+  if (legacyToken) {
+    if (sessionActive) {
+      sessionStorage.setItem('brightcyber_token', legacyToken);
+      localStorage.removeItem('brightcyber_token');
+      return legacyToken;
+    } else {
+      localStorage.removeItem('brightcyber_token');
+    }
+  }
+  return null;
 }
 
 export function setAuthToken(token: string | null): void {
   if (token) {
-    localStorage.setItem('brightcyber_token', token);
+    sessionStorage.setItem('brightcyber_token', token);
+    sessionStorage.setItem('brightcyber_session_active', '1');
+    sessionStorage.setItem('brightcyber_last_activity', Date.now().toString());
+    localStorage.removeItem('brightcyber_token');
   } else {
+    sessionStorage.removeItem('brightcyber_token');
+    sessionStorage.removeItem('brightcyber_session_active');
+    sessionStorage.removeItem('brightcyber_last_activity');
+    sessionStorage.removeItem('brightcyber_is_locked');
     localStorage.removeItem('brightcyber_token');
   }
 }

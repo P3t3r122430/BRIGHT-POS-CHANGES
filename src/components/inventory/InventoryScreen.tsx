@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Product, InventoryMovement } from '../../types';
-import { api } from '../../lib/api';
+import { api, getAuthToken } from '../../lib/api';
 import { formatKsh, formatNumber, formatDate } from '../../lib/utils';
 import {
   Warehouse,
@@ -16,7 +16,12 @@ import {
   DollarSign,
   X,
   ArrowUpRight,
-  ArrowDownRight
+  ArrowDownRight,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  ChevronDown,
+  ShieldCheck,
 } from 'lucide-react';
 
 export const InventoryScreen: React.FC = () => {
@@ -26,6 +31,9 @@ export const InventoryScreen: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'stock' | 'movements'>('stock');
   const [search, setSearch] = useState<string>('');
+  const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
+  const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Stock Adjustment Modal
   const [modalOpen, setModalOpen] = useState<boolean>(false);
@@ -105,6 +113,46 @@ export const InventoryScreen: React.FC = () => {
     }
   };
 
+  const handleExportStockList = async (format: 'xlsx' | 'csv') => {
+    if (!isAdmin) {
+      alert('Administrative privileges required to export stock lists.');
+      return;
+    }
+    setExportError(null);
+    setExportDropdownOpen(false);
+    try {
+      setExporting(format);
+      const token = getAuthToken();
+      const res = await fetch(`/api/inventory/export?format=${format}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Export failed with status ${res.status}`);
+      }
+
+      const blob = await res.blob();
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const filename = `bright-cyber-stock-list-${todayDate}.${format}`;
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err: any) {
+      setExportError(err.message || 'Failed to download stock list.');
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // Inventory Valuation Calculations
   const totalCostValuation = products.reduce((sum, p) => sum + p.stock_quantity * p.cost_price, 0);
   const totalRetailValuation = products.reduce((sum, p) => sum + p.stock_quantity * p.selling_price, 0);
@@ -132,6 +180,73 @@ export const InventoryScreen: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Admin-Only Stock List Download Button */}
+          {isAdmin && (
+            <div className="relative">
+              <button
+                id="btn-download-stock-list"
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                disabled={exporting !== null}
+                className="px-3.5 py-2 border border-[#2563EB] bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs uppercase tracking-[0.18em] rounded transition flex items-center gap-2 cursor-pointer shadow active:scale-[0.99] disabled:opacity-50"
+                title="Admin Only: Download Complete Inventory Stock List"
+              >
+                {exporting ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin text-white" />
+                    <span>Exporting {exporting.toUpperCase()}...</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 text-white" />
+                    <span>Download Stock List</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-white/80" />
+                  </>
+                )}
+              </button>
+
+              {exportDropdownOpen && (
+                <div
+                  id="dropdown-stock-export-options"
+                  className="absolute right-0 mt-2 w-64 bg-[#141414] border border-[#262626] rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
+                >
+                  <div className="px-3 py-2 border-b border-[#222222] mb-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#C5A059] flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
+                      <span>Admin Stock List Export</span>
+                    </div>
+                    <div className="text-[10px] text-[#777777] mt-0.5">
+                      Official inventory valuation snapshot
+                    </div>
+                  </div>
+
+                  <button
+                    id="btn-export-stock-xlsx"
+                    onClick={() => handleExportStockList('xlsx')}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs hover:bg-[#202020] text-[#E5E5E0] flex items-center gap-3 cursor-pointer transition"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-white">Excel Workbook (.xlsx)</div>
+                      <div className="text-[10px] text-[#777777]">Full tabular spreadsheet with totals</div>
+                    </div>
+                  </button>
+
+                  <button
+                    id="btn-export-stock-csv"
+                    onClick={() => handleExportStockList('csv')}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs hover:bg-[#202020] text-[#E5E5E0] flex items-center gap-3 cursor-pointer transition"
+                  >
+                    <FileText className="w-4 h-4 text-blue-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-white">Comma Separated (.csv)</div>
+                      <div className="text-[10px] text-[#777777]">Universal structured CSV document</div>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <button
             id="btn-adjust-stock"
             onClick={() => handleOpenAdjustment()}
@@ -141,6 +256,13 @@ export const InventoryScreen: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <div className="p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-rose-200 text-xs flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <span>{exportError}</span>
+        </div>
+      )}
 
       {/* Stock Valuation Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">

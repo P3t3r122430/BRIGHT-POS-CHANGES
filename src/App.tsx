@@ -22,7 +22,7 @@ import { BackupScreen } from './components/backup/BackupScreen';
 import { RotateCcw } from 'lucide-react';
 
 function MainApp() {
-  const { user, isAuthenticated, loading, isAdmin } = useAuth();
+  const { user, isAuthenticated, loading, isAdmin, isLocked } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('pos');
 
   if (loading) {
@@ -50,7 +50,10 @@ function MainApp() {
   const activeTab = adminOnlyTabs.includes(currentTab) && !isAdmin ? 'pos' : currentTab;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B0F19] text-[#0F172A] dark:text-[#F8FAFC] flex flex-col antialiased">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B0F19] text-[#0F172A] dark:text-[#F8FAFC] flex flex-col antialiased relative">
+      {/* If terminal is locked, overlay the dedicated Lock Authentication Screen */}
+      {isLocked && <LoginScreen isLockScreen={true} />}
+
       {/* Top Bar */}
       <Navbar currentTab={activeTab} onNavigate={(tab) => setCurrentTab(tab)} />
 

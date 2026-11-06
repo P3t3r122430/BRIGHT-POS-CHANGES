@@ -181,6 +181,7 @@ export interface BusinessSettings {
   services_mpesa_account?: string | null;
   products_mpesa_paybill?: string | null;
   products_mpesa_account?: string | null;
+  auto_lock_timeout_minutes?: number;
   updated_at: string;
 }
 

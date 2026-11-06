@@ -291,6 +291,7 @@ export async function initializeSchema(): Promise<void> {
     { col: 'auto_backup_last_run', def: "TEXT" },
     { col: 'auto_backup_last_status', def: "TEXT" },
     { col: 'auto_backup_last_error', def: "TEXT" },
+    { col: 'auto_lock_timeout_minutes', def: "INTEGER DEFAULT 15" },
   ];
 
   for (const m of migrationColumns) {

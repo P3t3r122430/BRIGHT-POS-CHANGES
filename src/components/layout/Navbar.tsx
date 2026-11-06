@@ -15,7 +15,8 @@ import {
   Moon,
   Sun,
   Palette,
-  KeyRound
+  KeyRound,
+  Lock,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -24,7 +25,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, onNavigate }) => {
-  const { user, settings, logout } = useAuth();
+  const { user, settings, logout, lockSession } = useAuth();
   const { theme, isDark, toggleTheme } = useTheme();
   const [time, setTime] = useState<string>('');
   const [date, setDate] = useState<string>('');
@@ -220,12 +221,23 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onNavigate }) => {
               )}
 
               <button
+                id="btn-lock-pos"
+                onClick={() => {
+                  setProfileOpen(false);
+                  lockSession();
+                }}
+                className="w-full text-left px-3.5 py-2 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center gap-2 border-t border-[#F1F5F9] dark:border-[#1E293B] cursor-pointer transition font-medium"
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-500" /> Lock Terminal Now
+              </button>
+
+              <button
                 id="btn-logout"
                 onClick={() => {
                   setProfileOpen(false);
                   logout();
                 }}
-                className="w-full text-left px-3.5 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2 border-t border-[#F1F5F9] dark:border-[#1E293B] cursor-pointer transition"
+                className="w-full text-left px-3.5 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center gap-2 cursor-pointer transition"
               >
                 <LogOut className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" /> Sign Out
               </button>
