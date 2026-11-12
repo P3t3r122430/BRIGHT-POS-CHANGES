@@ -628,15 +628,22 @@ export const CustomersScreen: React.FC = () => {
                 <div className="space-y-4">
                   {/* Company & Client Info Strip */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-[#1E1E1E]">
-                    <div>
-                      <div className="text-sm font-bold uppercase tracking-wider text-[#C5A059]">
-                        {statementData.settings?.business_name || 'BRIGHT CYBER & ICT CENTRE'}
-                      </div>
-                      <div className="text-[11px] text-[#777777] mt-0.5">
-                        {statementData.settings?.address || 'Biashara Street, Nairobi, Kenya'}
-                      </div>
-                      <div className="text-[11px] text-[#777777]">
-                        Tel: {statementData.settings?.phone || '+254 712 345 678'} • Email: {statementData.settings?.email || 'info@brightcyber.co.ke'}
+                    <div className="flex items-start gap-3">
+                      <img
+                        src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+                        alt="Bright Cyber Global Tech"
+                        className="w-12 h-12 object-contain rounded-lg bg-[#0B1229] border border-blue-500/30 p-0.5 shrink-0"
+                      />
+                      <div>
+                        <div className="text-sm font-bold uppercase tracking-wider text-[#C5A059]">
+                          {statementData.settings?.business_name || 'BRIGHT CYBER & ICT CENTRE'}
+                        </div>
+                        <div className="text-[11px] text-[#777777] mt-0.5">
+                          {statementData.settings?.address || 'Biashara Street, Nairobi, Kenya'}
+                        </div>
+                        <div className="text-[11px] text-[#777777]">
+                          Tel: {statementData.settings?.phone || '+254 712 345 678'} • Email: {statementData.settings?.email || 'info@brightcyber.co.ke'}
+                        </div>
                       </div>
                     </div>
 

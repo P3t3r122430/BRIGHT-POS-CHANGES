@@ -136,10 +136,15 @@ input:focus, select:focus, textarea:focus {
 }
 
 @media print {
+  @page {
+    size: portrait;
+    margin: 8mm;
+  }
   body * {
     visibility: hidden;
   }
-  #printable-receipt, #printable-receipt * {
+  #printable-receipt, #printable-receipt *,
+  #printable-stock-audit, #printable-stock-audit * {
     visibility: visible;
   }
   #printable-receipt {
@@ -152,6 +157,18 @@ input:focus, select:focus, textarea:focus {
     padding: 10px !important;
     background: white !important;
     color: black !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  #printable-stock-audit {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #111827 !important;
     box-shadow: none !important;
     border: none !important;
   }

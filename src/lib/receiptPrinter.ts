@@ -1,5 +1,6 @@
 import { Sale, BusinessSettings } from '../types';
 import { formatKsh, formatDate, formatNumber } from './utils';
+import { toCanvas } from 'html-to-image';
 import html2canvas from 'html2canvas';
 
 export function generateReceiptHtml(
@@ -621,18 +622,24 @@ export async function generateReceiptCanvas(
     // Give browser a short frame for layout calculation
     await new Promise((resolve) => setTimeout(resolve, 80));
 
-    const canvas = await html2canvas(targetNode, {
-      scale: 2, // 2x Retina clarity
-      backgroundColor: '#ffffff',
-      useCORS: true,
-      logging: false,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: document.documentElement.offsetWidth,
-      windowHeight: document.documentElement.offsetHeight,
-    });
-
-    return canvas;
+    try {
+      const canvas = await toCanvas(targetNode, {
+        pixelRatio: 2,
+        backgroundColor: '#ffffff',
+      });
+      return canvas;
+    } catch (toImgErr) {
+      console.warn('html-to-image fallback to html2canvas:', toImgErr);
+      const canvas = await html2canvas(targetNode, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+      });
+      return canvas;
+    }
   } catch (err) {
     console.error('Failed to generate receipt canvas:', err);
     return null;

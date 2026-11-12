@@ -8,14 +8,9 @@ import {
   AlertTriangle,
   RotateCcw,
   Shield,
-  ShieldAlert,
   ArrowRight,
   LogOut,
-  Sparkles,
   CheckCircle2,
-  Clock,
-  Terminal,
-  Store
 } from 'lucide-react';
 
 interface LoginScreenProps {
@@ -76,29 +71,33 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
     return (
       <div
         id="pos-lock-screen-overlay"
-        className="fixed inset-0 z-[9999] bg-[#070A10]/95 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 text-[#F8FAFC] antialiased select-none"
+        className="fixed inset-0 z-[9999] bg-[#070A10]/95 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 text-[#F8FAFC] antialiased select-none"
       >
         <div className="w-full max-w-md bg-[#0F172A] border border-[#1E293B] shadow-2xl rounded-2xl p-6 sm:p-8 space-y-6 relative overflow-hidden">
-          {/* Subtle security glow at top */}
-          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600" />
+          {/* Subtle amber accent bar at top */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#C5A059]" />
 
           {/* Header */}
           <div className="text-center space-y-2 pt-1">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mb-2 shadow-inner">
-              <Lock className="w-7 h-7 animate-pulse text-amber-400" />
+            <div className="flex justify-center mb-1">
+              <img
+                src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+                alt="Bright Cyber Global Tech"
+                className="w-14 h-14 rounded-xl object-contain bg-[#0B1229] border border-blue-500/30 shadow-lg p-0.5"
+              />
             </div>
 
             <div className="flex items-center justify-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest bg-amber-500/15 border border-amber-500/30 text-amber-300">
+              <span className="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/15 border border-amber-500/30 text-amber-300">
                 POS Terminal Locked
               </span>
             </div>
 
-            <h1 className="text-xl font-bold font-serif-luxury tracking-wide text-white uppercase pt-1">
+            <h1 className="text-lg font-bold font-serif-luxury tracking-wide text-white uppercase">
               Bright Cyber & ICT Centre
             </h1>
             <p className="text-xs text-[#94A3B8]">
-              Locked due to {autoLockTimeoutMinutes}-minute inactivity timeout.
+              Locked after {autoLockTimeoutMinutes} min inactivity. Re-enter password to resume.
             </p>
           </div>
 
@@ -206,33 +205,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
   }
 
   // ==========================================
-  // VIEW B: REDESIGNED MAIN OPERATOR LOGIN SCREEN
+  // VIEW B: COMMERCIAL OPERATOR LOGIN SCREEN
   // ==========================================
   return (
-    <div className="min-h-screen bg-[#070A10] flex items-center justify-center p-4 sm:p-6 text-[#F8FAFC] antialiased select-none relative overflow-hidden">
-      {/* Decorative background glow accents */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-gradient-to-tr from-[#2563EB]/10 via-[#3B82F6]/5 to-transparent rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-blue-600/5 rounded-full blur-2xl pointer-events-none" />
-
-      <div className="max-w-md w-full bg-[#0F172A] border border-[#1E293B] rounded-2xl p-6 sm:p-8 shadow-2xl space-y-7 relative z-10">
+    <div className="min-h-screen bg-[#070A10] flex items-center justify-center p-4 sm:p-6 text-[#F8FAFC] antialiased select-none font-sans">
+      <div className="max-w-md w-full bg-[#0F172A] border border-[#1E293B] rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
         {/* Brand Header */}
         <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-16 h-16 border-2 border-[#2563EB] rotate-45 bg-[#141F36] shadow-xl my-2 rounded-xl group transition-transform hover:scale-105">
-            <div className="w-9 h-9 bg-gradient-to-br from-[#2563EB] to-[#1D4ED8] flex items-center justify-center -rotate-45 rounded-md shadow-md">
-              <span className="font-serif-luxury text-base font-bold text-white tracking-tighter">BC</span>
-            </div>
+          <div className="flex justify-center">
+            <img
+              src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+              alt="Bright Cyber Global Tech"
+              className="w-20 h-20 rounded-2xl object-contain bg-[#0B1229] border border-blue-500/30 shadow-2xl p-1"
+            />
           </div>
 
           <div className="space-y-1 pt-1">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-[#1E293B] text-[#94A3B8] border border-[#334155]">
-              <Store className="w-3 h-3 text-[#3B82F6]" />
-              <span>Biashara Street, Nairobi • POS Terminal</span>
-            </div>
-            <h1 className="text-xl font-bold font-serif-luxury tracking-wider text-white uppercase pt-1">
-              BRIGHT CYBER & ICT
+            <h1 className="text-xl font-bold font-serif-luxury tracking-wider text-white uppercase">
+              BRIGHT CYBER & ICT CENTRE
             </h1>
-            <p className="text-[11px] text-[#94A3B8] uppercase tracking-[0.2em] font-medium">
+            <p className="text-xs text-[#94A3B8] font-medium tracking-wide">
               Point of Sale & Business Management
+            </p>
+            <p className="text-[11px] text-[#64748B]">
+              Biashara Street, Nairobi • Main Counter Terminal
             </p>
           </div>
         </div>
@@ -248,7 +244,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
         )}
 
         {/* Login Form */}
-        <form onSubmit={handleLogin} className="space-y-4.5">
+        <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-[0.18em] block mb-2">
               Operator Identifier
@@ -301,7 +297,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
             id="btn-login-submit"
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-xs uppercase tracking-[0.25em] rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-900/30 active:scale-[0.99] mt-3 disabled:opacity-50"
+            className="w-full py-3.5 bg-[#2563EB] hover:bg-[#1D4ED8] active:bg-[#1E40AF] text-white font-bold text-xs uppercase tracking-[0.2em] rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-blue-900/30 active:scale-[0.99] mt-3 disabled:opacity-50"
           >
             {loading ? (
               <>
@@ -310,7 +306,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
               </>
             ) : (
               <>
-                <span>Authorize & Open Station</span>
+                <span>Sign In to Terminal</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -324,7 +320,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ isLockScreen = false }
             <span>Encrypted POS Session • Role-Based Access Control</span>
           </div>
           <div className="text-[10px] text-[#475569] uppercase tracking-widest font-mono">
-            Bright Cyber & ICT Centre • Nairobi, Kenya
+            Bright Cyber Global Tech • Nairobi, Kenya
           </div>
         </div>
       </div>

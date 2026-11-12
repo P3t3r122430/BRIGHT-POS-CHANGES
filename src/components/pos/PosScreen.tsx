@@ -2961,6 +2961,13 @@ export const PosScreen: React.FC = () => {
               >
                 {/* Header */}
                 <div className="text-center pb-2 border-b border-dashed border-gray-400 space-y-0.5">
+                  <div className="flex justify-center pb-1">
+                    <img
+                      src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+                      alt="Bright Cyber Global Tech"
+                      className="h-10 w-10 object-contain rounded-md"
+                    />
+                  </div>
                   <div className="font-serif font-bold text-sm tracking-wider text-black">
                     {settings?.business_name || 'BRIGHT CYBER & ICT CENTRE'}
                   </div>

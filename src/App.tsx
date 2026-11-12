@@ -27,15 +27,15 @@ function MainApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B0F19] flex flex-col items-center justify-center text-[#0F172A] dark:text-[#F8FAFC] space-y-4">
-        <div className="w-12 h-12 border border-[#2563EB] flex items-center justify-center rotate-45 shadow-lg bg-[#FFFFFF] dark:bg-[#0F172A]">
-          <div className="w-7 h-7 bg-[#2563EB] flex items-center justify-center -rotate-45">
-            <span className="font-serif-luxury text-[11px] font-bold text-white tracking-tighter">BC</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5 text-[11px] uppercase tracking-[0.25em] font-medium text-[#64748B] dark:text-[#94A3B8]">
+      <div className="min-h-screen bg-[#070A10] flex flex-col items-center justify-center text-[#F8FAFC] space-y-4">
+        <img
+          src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+          alt="Bright Cyber Global Tech"
+          className="w-16 h-16 rounded-2xl object-contain bg-[#0B1229] border border-blue-500/30 shadow-2xl"
+        />
+        <div className="flex items-center gap-2.5 text-[11px] uppercase tracking-[0.2em] font-medium text-[#94A3B8]">
           <RotateCcw className="w-3.5 h-3.5 animate-spin text-[#2563EB]" />
-          <span>INITIALIZING POS TERMINAL...</span>
+          <span>Starting Bright Cyber POS...</span>
         </div>
       </div>
     );

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { useAuth } from '../../context/AuthContext';
 import { Product, InventoryMovement } from '../../types';
 import { api, getAuthToken } from '../../lib/api';
@@ -22,10 +23,13 @@ import {
   FileText,
   ChevronDown,
   ShieldCheck,
+  Printer,
+  Sliders,
 } from 'lucide-react';
+import { StockAuditModal, AuditPreset } from './StockAuditModal';
 
 export const InventoryScreen: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, settings } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -34,6 +38,11 @@ export const InventoryScreen: React.FC = () => {
   const [exportDropdownOpen, setExportDropdownOpen] = useState<boolean>(false);
   const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  // Stock Audit & Export Generator Modal State
+  const [auditModalOpen, setAuditModalOpen] = useState<boolean>(false);
+  const [auditInstantPrint, setAuditInstantPrint] = useState<boolean>(false);
+  const [auditInitialPreset, setAuditInitialPreset] = useState<AuditPreset>('valuation');
 
   // Stock Adjustment Modal
   const [modalOpen, setModalOpen] = useState<boolean>(false);
@@ -144,13 +153,76 @@ export const InventoryScreen: React.FC = () => {
       a.download = filename;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(downloadUrl);
+      setTimeout(() => {
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 1500);
     } catch (err: any) {
-      setExportError(err.message || 'Failed to download stock list.');
+      // Client-side fallback using products in memory
+      try {
+        const todayDate = new Date().toISOString().slice(0, 10);
+        const filename = `bright-cyber-stock-list-${todayDate}.${format}`;
+        if (format === 'xlsx') {
+          const wsData = [
+            ['BRIGHT CYBER GLOBAL TECH - BRIGHT CYBER & ICT CENTRE'],
+            ['CURRENT INVENTORY / STOCK LIST'],
+            [`Generated date: ${new Date().toLocaleString('en-KE')}`, '', `Admin: ${user?.name || 'Administrator'}`],
+            [],
+            ['#', 'SKU', 'Barcode', 'Product Name', 'Category', 'Unit', 'Qty', 'Cost Price', 'Selling Price', 'Total Cost', 'Total Retail', 'Status'],
+            ...products.map((p, i) => [
+              i + 1,
+              p.sku,
+              p.barcode || 'N/A',
+              p.name,
+              p.category_name || 'General',
+              p.unit,
+              p.stock_quantity,
+              p.cost_price,
+              p.selling_price,
+              p.stock_quantity * p.cost_price,
+              p.stock_quantity * p.selling_price,
+              p.stock_quantity <= 0 ? 'Out of Stock' : p.stock_quantity <= p.minimum_stock ? 'Low Stock' : 'Optimal'
+            ])
+          ];
+          const ws = XLSX.utils.aoa_to_sheet(wsData);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Stock List');
+          XLSX.writeFile(wb, filename);
+        } else {
+          const csvContent = products.map((p, i) => 
+            `"${i + 1}","${p.sku}","${p.name.replace(/"/g, '""')}","${p.category_name || ''}","${p.unit}","${p.stock_quantity}","${p.cost_price}","${p.selling_price}"`
+          ).join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            if (document.body.contains(a)) document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 1500);
+        }
+      } catch (clientErr: any) {
+        setExportError(err.message || 'Failed to download stock list.');
+      }
     } finally {
       setExporting(null);
     }
+  };
+
+  const handleOpenAuditModal = (preset: AuditPreset = 'valuation', instantPrint: boolean = false) => {
+    if (!isAdmin) {
+      alert('Administrative privileges required to access stock list generator.');
+      return;
+    }
+    setAuditInitialPreset(preset);
+    setAuditInstantPrint(instantPrint);
+    setAuditModalOpen(true);
+    setExportDropdownOpen(false);
   };
 
   // Inventory Valuation Calculations
@@ -207,18 +279,45 @@ export const InventoryScreen: React.FC = () => {
               {exportDropdownOpen && (
                 <div
                   id="dropdown-stock-export-options"
-                  className="absolute right-0 mt-2 w-64 bg-[#141414] border border-[#262626] rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
+                  className="absolute right-0 mt-2 w-72 bg-[#141414] border border-[#262626] rounded-xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95"
                 >
                   <div className="px-3 py-2 border-b border-[#222222] mb-1">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-[#C5A059] flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-[#C5A059]" />
-                      <span>Admin Stock List Export</span>
+                      <span>Admin Stock List & Audit Generator</span>
                     </div>
                     <div className="text-[10px] text-[#777777] mt-0.5">
-                      Official inventory valuation snapshot
+                      Official A4 Portrait Inventory Documents
                     </div>
                   </div>
 
+                  {/* Option 1: Customize & Download PDF (Portrait) */}
+                  <button
+                    id="btn-customize-stock-pdf"
+                    onClick={() => handleOpenAuditModal('valuation', false)}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs hover:bg-[#202020] text-[#E5E5E0] flex items-center gap-3 cursor-pointer transition"
+                  >
+                    <Sliders className="w-4 h-4 text-[#C5A059] shrink-0" />
+                    <div>
+                      <div className="font-semibold text-white">Customize & Download PDF (Portrait)</div>
+                      <div className="text-[10px] text-[#777777]">Configure presets, filters & toggleable columns</div>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Instant Download PDF / Print (Portrait) */}
+                  <button
+                    id="btn-instant-print-stock-pdf"
+                    onClick={() => handleOpenAuditModal('valuation', true)}
+                    className="w-full text-left px-3 py-2.5 rounded-lg text-xs hover:bg-[#202020] text-[#E5E5E0] flex items-center gap-3 cursor-pointer transition"
+                  >
+                    <Printer className="w-4 h-4 text-purple-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-white">Instant Download PDF / Print (Portrait)</div>
+                      <div className="text-[10px] text-[#777777]">Download A4 portrait PDF document (.pdf)</div>
+                    </div>
+                  </button>
+
+                  {/* Option 3: Excel Workbook (.xlsx) */}
                   <button
                     id="btn-export-stock-xlsx"
                     onClick={() => handleExportStockList('xlsx')}
@@ -227,10 +326,11 @@ export const InventoryScreen: React.FC = () => {
                     <FileSpreadsheet className="w-4 h-4 text-emerald-400 shrink-0" />
                     <div>
                       <div className="font-semibold text-white">Excel Workbook (.xlsx)</div>
-                      <div className="text-[10px] text-[#777777]">Full tabular spreadsheet with totals</div>
+                      <div className="text-[10px] text-[#777777]">Formatted spreadsheet with valuation metrics</div>
                     </div>
                   </button>
 
+                  {/* Option 4: Comma Separated (.csv) */}
                   <button
                     id="btn-export-stock-csv"
                     onClick={() => handleExportStockList('csv')}
@@ -239,7 +339,7 @@ export const InventoryScreen: React.FC = () => {
                     <FileText className="w-4 h-4 text-blue-400 shrink-0" />
                     <div>
                       <div className="font-semibold text-white">Comma Separated (.csv)</div>
-                      <div className="text-[10px] text-[#777777]">Universal structured CSV document</div>
+                      <div className="text-[10px] text-[#777777]">Universal UTF-8 structured CSV dataset</div>
                     </div>
                   </button>
                 </div>
@@ -648,6 +748,19 @@ export const InventoryScreen: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Stock Audit & Export Generator Modal */}
+      {auditModalOpen && (
+        <StockAuditModal
+          isOpen={auditModalOpen}
+          onClose={() => setAuditModalOpen(false)}
+          products={products}
+          settings={settings}
+          user={user}
+          initialPreset={auditInitialPreset}
+          instantPrint={auditInstantPrint}
+        />
       )}
     </div>
   );

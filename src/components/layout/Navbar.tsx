@@ -74,9 +74,11 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onNavigate }) => {
     <header className="bg-white dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F8FAFC] border-b border-[#E2E8F0] dark:border-[#1E293B] px-4 py-2.5 flex items-center justify-between sticky top-0 z-30 shadow-xs transition-colors">
       {/* Left: Brand Identity */}
       <div className="flex items-center gap-3.5">
-        <div className="w-9 h-9 rounded-lg bg-[#2563EB] flex items-center justify-center text-white shadow-sm shrink-0 font-bold text-sm tracking-tight">
-          BC
-        </div>
+        <img
+          src="/assets/aistudio/25Sep2424_Simon_Pro_Upload__6279a8d4.jpg"
+          alt="Bright Cyber Global Tech"
+          className="w-10 h-10 rounded-lg object-contain bg-[#0B1229] border border-blue-500/30 shadow-xs shrink-0"
+        />
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-semibold text-sm sm:text-base tracking-tight text-[#0F172A] dark:text-[#F8FAFC] leading-tight">
